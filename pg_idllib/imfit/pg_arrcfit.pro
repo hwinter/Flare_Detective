@@ -1,0 +1,219 @@
+;+
+; NAME:
+;
+; pg_arrcfit
+;
+; PURPOSE:
+;
+; returns the "centroid" of the input array by different methods
+;
+; CATEGORY:
+;
+; image fitting utility
+;
+; CALLING SEQUENCE:
+;
+; pg_arrcfit,arr,x,y,method=method
+;
+; INPUTS:
+;
+; arr: anumeric array
+; method: a string with the method name, chosen between
+;
+;             'MAX': return the position of the brightest pixel 
+;             'CENTROID': returns the center of mass
+;
+; OPTIONAL INPUTS:
+;
+; 
+; KEYWORD PARAMETERS:
+;
+; 
+;
+; OUTPUTS:
+;
+; x,y: position of the "centroid" or "peak" of the image
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; AUTHOR:
+;
+; Paolo Grigis, Institute of Astronomy, ETH Zurich
+; pgrigis@astro.phys.ethz.ch
+;
+; MODIFICATION HISTORY:
+;
+; 12-OCT-2004 written
+; 11-DEC-2006 corrected centroid method for images with negatives
+;
+;-
+
+;.comp pg_arrcfit
+
+PRO pg_arrcfit,arr,x,y,arr_err=arr_arr,method=method,peakvalue=peakvalue $
+              ,avmethods=avmethods,getmethods=getmethods $
+              ,xerr=xerr,yerr=yerr,peakerr=peakerr,fitout=fitout
+
+avmethods=['MAX','CENTROID','GAUSSFIT','QUADRIC','GENQUAD']
+
+IF keyword_set(getmethods) THEN RETURN
+
+s=size(arr)
+
+IF s[0] NE 2 THEN BEGIN
+   print,'Pleas input a 2-dim array!'
+   RETURN
+ENDIF
+
+xp=s[1];number of columns (that is, pixels in the x dir)
+yp=s[2];number of rows    (that is, pixels in the y dir)
+
+method=fcheck(method,'MAX')
+
+CASE strupcase(strtrim(method,2)) OF 
+   
+   'MAX': BEGIN 
+      peakvalue=max(arr,index)
+      aind=array_indices(arr,index)
+      x=aind[0]
+      y=aind[1]      
+   END
+
+   'CENTROID': BEGIN
+      res=centroid(arr+abs(min(arr)))
+      x=res[0]
+      y=res[1]
+      peakvalue=arr[round(x),round(y)]
+   END
+
+   'GAUSSFIT': BEGIN
+      nel=n_elements(arr)
+      s=size(arr)
+      mindim=min(s[[1,2]])
+     
+      IF (nel LT 8) OR (mindim LT 3) THEN BEGIN
+         print,'YOU need a ROI which is at least 3x3!'
+         RETURN
+      ENDIF
+
+      IF NOT exist(arr_arr) THEN BEGIN 
+         arr_err=arr
+         arr_err[*]=max(arr)/10.
+      ENDIF 
+
+      yfit=mpfit2dpeak(arr,parms,/tilt,error=arr_err,perror=perror,bestnorm=bestnorm)
+
+      fitout=parms
+      
+      dof=n_elements(arr)-n_elements(parms)
+      out_error=perror*sqrt(bestnorm / dof)
+
+;      A(0)   Constant baseline level
+;      A(1)   Peak value
+;      A(2)   Peak half-width (x) -- gaussian sigma or half-width at half-max
+;      A(3)   Peak half-width (y) -- gaussian sigma or half-width at half-max
+;      A(4)   Peak centroid (x)
+;      A(5)   Peak centroid (y)
+;      A(6)   Rotation angle (radians) if TILT keyword set
+;      A(7)   Moffat power law index if MOFFAT keyword set
+
+      x=parms[4]
+      xerr=out_error[4]
+      y=parms[5]
+      yerr=out_error[5]
+      peakvalue=parms[1]
+      peakerror=out_error[1]
+
+   END
+
+   'QUADRIC': BEGIN 
+      dummy=max(arr,index)
+      aind=array_indices(arr,index)
+
+      x=aind[0]>1 < (s[1]-2)
+      y=aind[1]>1 < (s[2]-2)    
+      ;sucxh that it never chooses a point on the boundary!
+
+      z1=arr[x  ,y]
+      z2=arr[x+1,y]
+      z3=arr[x  ,y+1]
+      z4=arr[x-1,y]
+      z5=arr[x  ,y-1]
+
+      a=-z1+0.5*z2       +0.5*z4
+      b=-z1       +0.5*z3       +0.5*z5
+      c=    0.5*z2       -0.5*z4
+      d=           0.5*z3       -0.5*z5
+      e= z1   
+
+      IF a GE 0 THEN print,'WARNING! A>= 0!'
+      IF b GE 0 THEN print,'WARNING! B>= 0!'
+
+      xx=c/(2*a)
+      yy=d/(2*b)
+
+      x=x-xx
+      y=y-yy
+
+      peakvalue=a*xx*xx+b*yy*yy+c*x+d*y+e
+
+   END
+
+   'GENQUAD': BEGIN 
+      ;stop
+      xypos=pg_fit2dimparpeak(arr,nsquare=2)
+      peakvalue=0.;need to compute that
+      x=xypos[0]
+      y=xypos[1]
+   END
+
+
+   ELSE : BEGIN
+      print,'Method '+method+' could not be found!'
+      RETURN
+   ENDELSE 
+
+ENDCASE
+  
+  
+
+END
+
+ 
+
+
+;a=[[0 ,0, 0, 0,1], $
+;   [1 ,0, 1, 0,1], $
+;   [0 ,1, 0, 1,1], $
+;   [1 ,0,-1, 0,1], $
+;   [0 ,1, 0,-1,1]]
+;IDL> print,invert(a)
+;     -1.00000     0.500000     -0.00000     0.500000      0.00000
+;     -1.00000      0.00000     0.500000     -0.00000     0.500000
+;      0.00000     0.500000      0.00000    -0.500000      0.00000
+;     -0.00000     -0.00000     0.500000      0.00000    -0.500000
+;      1.00000      0.00000      0.00000     -0.00000      0.00000
+
+

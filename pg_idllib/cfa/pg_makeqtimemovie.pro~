@@ -1,0 +1,118 @@
+;+
+; NAME:
+;
+;  pg_makeqtimemovie
+;
+; PURPOSE:
+;
+; produces a quick-time movie
+;
+; CATEGORY:
+;
+; Hollywood
+;
+; CALLING SEQUENCE:
+;
+; pg_makeqtmovie,imset
+;
+; INPUTS:
+;
+;
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; MODIFICATION HISTORY:
+;
+;-
+
+PRO pg_makeqtimemovie,imset,moviefile=moviefile,tmpdir=tmpdir
+
+s=size(imset)
+
+IF s[0] NE 3 THEN BEGIN 
+   print,'Invalid input'
+   RETURN 
+ENDIF
+
+nx=s[1]
+ny=s[2]
+nt=s[3]
+
+ndigit=ceil(alog10(nt+1))
+
+tmpdir=fcheck(tmpdir,'~/machd/tmpmovdir/')
+
+moviefile=fcheck(moviefile,'~/machd/idlmovie.mov')
+IF file_exist(moviefile) THEN file_delete,moviefile
+
+
+IF NOT file_exist(tmpdir) THEN file_mkdir,tmpdir
+
+
+filelist=strarr(nt)
+thistime=time2file(!stime,/sec)
+
+tvlct,r,g,b,/get
+
+themin=min(imset)
+themax=max(imset)
+
+FOR i=0,nt-1 DO BEGIN 
+   filelist[i]=tmpdir+'frame_'+thistime+'_'+smallint2str(i,strlen=ndigit)+'.png'
+   im=bytscl(imset[*,*,i],min=themin,max=themax)
+   write_png,filelist[i],im,r,g,b
+ENDFOR
+
+
+QTDIR='~/machd/qt_tools/pieces/bin'
+DATARATE='500'
+SEQUENCERATE='50'
+VIDEO='avc1'
+
+commandstring=QTDIR+'/qt_export  --datarate='+DATARATE+' --sequencerate=' $
+             +SEQUENCERATE+'  '+filelist[0]+' --video='+VIDEO+' '+moviefile
+
+print,'Spawning '+commandstring
+spawn,commandstring
+print,'Done!'
+
+file_delete,filelist
+
+END
+
+
+

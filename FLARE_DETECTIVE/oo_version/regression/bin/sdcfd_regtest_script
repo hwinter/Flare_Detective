@@ -1,0 +1,11 @@
+!QUIET=1
+
+.compile sdcfd_trig_runflaredetection.pro
+.compile sdcfd_trig_flaredet.pro
+.compile sdcfd_regtest.pro
+
+args = command_line_args ()
+
+sdcfd_regtest, args
+
+exit

@@ -1,0 +1,132 @@
+;+
+;NAME:
+; 	rapp_hsi_spg
+;PROJECT:
+; 	ETHZ Radio Astronomy
+;CATEGORY:
+; 	Utility
+;PURPOSE:
+; This function returns a hessi spectrogram for a given time interval
+;
+;
+;CALLING SEQUENCE:
+; rapp_his_spg,time_interval,bg_time_intv, $
+;          high_energy=e, xaxis=xaxis, yaxis=yaxis
+;
+;INPUT:
+; time_interval : a 2 element vector defining the time intervall of the
+;                 spectrogram
+; bg_time_intv  : a 2 element vector defining th time interval for the 
+;                 background
+; 
+;
+;KEYWORD INPUT:
+; HIGH_ENERGY:  returns a spectrogram in the range 3-17000 keV instead
+;               of 3-50 keV
+; [X,Y]AXIS  :  returns a vector of the corresponding axis
+;
+;RETURN VALUE:
+; the spectrogram for the given time interval with subtracted background
+;
+;CALLS
+; many.
+;
+;HISTORY:
+;	Peter Messmer, 2002/05/02 created
+;		messmer@astro.phys.ethz.ch
+;       Original design by Paolo Grigis
+;
+;	PSH, 2003/09/01: added keyword /SEMICAL
+;-
+
+FUNCTION rapp_hsi_spg,time_intv,bg_time_intv,$
+        high_energy=e, xaxis=xaxis, yaxis=yaxis, SEMICAL=SEMICAL
+
+   IF keyword_set(e) THEN BEGIN
+;
+;     the energy bins are unevenly spaced:   1 kev in the range 3-100
+;					    10 kev in the range 100-1000
+;                                          100 kev in the range 1000-17000
+;
+      energy_band=fltarr(348)
+      energy_band[0:97]=findgen(98)+3  
+      energy_band[98:187]=(1+findgen(90))*10+100
+      energy_band[188:347]=(1+findgen(160))*100+1000
+      y=energy_band[0:346]
+      ymax=max(y)     
+   ENDIF ELSE BEGIN
+
+;
+;     energy bin of 1 kev from 3 to 50
+;
+      energy_band=findgen(49)+3 
+      y=findgen(48)+3
+      ymax=50
+   ENDELSE
+ 
+   time_intv = anytim(time_intv)
+;   print, time_intv
+   lc=hsi_lightcurve()
+   lc->set,obs_time_interval=time_intv
+   lc->set,ltc_time_resolution=4 
+   lc->set,seg_index_mask=[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1] 
+   lc->set,ltc_energy_band=energy_band
+   IF KEYWORD_SET(SEMICAL) THEN lc->set,sp_semi_cal=1
+
+   delta_t=time_intv[1]-time_intv[0]
+   x=findgen(delta_t/4)*4
+   lc->set,ltc_time_range=[0,delta_t]
+
+   xaxis = x
+   yaxis = y
+
+   spectrogram=lc->getdata()
+   if n_elements(spectrogram) eq 1 then return, spectrogram
+
+   spectrogram=spectrogram/4 
+
+ 
+;
+; Background subtraction
+;
+   tmp=size(bg_time_intv)
+   IF tmp[0] NE 0 THEN BEGIN
+         bg_time_intv = anytim(bg_time_intv)
+         bg_delta_time=bg_time_intv[1]-bg_time_intv[0]
+         lc->set,obs_time_interval=bg_time_intv
+         lc->set,ltc_time_range=[0,bg_delta_time]
+         background=lc->getdata()
+
+         tmp=size(y)
+         FOR i=0,(tmp[1]-1) DO BEGIN
+            spectrogram[*,i]=spectrogram[*,i]- $
+            total(background[*,i])/bg_delta_time
+         ENDFOR
+        spectrogram=spectrogram>0
+   ENDIF
+;
+;
+;
+   spg_max_value=max(spectrogram)
+   spg_min_value=min(spectrogram)
+
+
+   IF (spg_max_value GT 0) THEN BEGIN
+
+         IF keyword_set(e) THEN BEGIN
+;
+;           compute the number of counts per second per keV
+;
+            spectrogram[*,96:186]=spectrogram[*,96:186]/10
+            spectrogram[*,187:346]=spectrogram[*,187:346]/100           
+ 
+         ENDIF 
+   ENDIF
+
+  return, spectrogram
+END
+
+
+
+
+

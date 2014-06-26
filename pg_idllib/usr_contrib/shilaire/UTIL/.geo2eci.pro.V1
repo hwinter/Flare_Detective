@@ -1,0 +1,69 @@
+;+
+; NAME:
+;       GEO2ECI
+;
+; PURPOSE:
+;       Converts from ECI (Earth-Centered Inertial) (X,Y,Z) rectangular coordinates to 
+;	geographic spherical coordinates (latitude, longitude, altitude).
+;	UT time is also needed.
+;
+;	ECI coordinates are in km from Earth center.
+;	Geographic coordinates are in degrees/degrees/km
+;
+; CALLING SEQUENCE:
+;       ECIcoord=geo2eci(gcoord,time)
+;
+; INPUT:
+;
+; KEYWORD INPUTS:
+;		None
+;
+; OUTPUT:
+;
+; COMMON BLOCKS:
+;		None
+;
+; RESTRICTIONS:
+;       None
+;
+; EXAMPLES:
+;
+; MODIFICATION HISTORY:
+;		Written by Pascal Saint-Hilaire (shilaire@astro.phys.ethz.ch) on 2001/05/14
+;		
+;-
+
+;====================================================================================
+FUNCTION geo2eci_singlepoint,incoord,time
+
+	Re=6378.137	; Earth's equatorial radius, in km
+
+	lat = DOUBLE(incoord(0))*!PI/180.
+	lon = DOUBLE(incoord(1))*!PI/180.
+	alt = DOUBLE(incoord(2))
+	t=anytim(time,/ex)
+	ct2lst,gst,0,0,ten(t(0),t(1)),t(4),t(5),t(6)
+	angle_sid=gst*2.*!PI/24.	; sidereal angle
+
+	theta=lon+angle_sid		; azimuth
+	r=(alt+Re)*cos(lat)
+	X=r*cos(theta)
+	Y=r*sin(theta)
+	Z=(alt+Re)*sin(lat)
+		
+	RETURN,[X,Y,Z]
+END
+;====================================================================================
+FUNCTION geo2eci,gcoord,times
+	S=Size(gcoord)
+	IF S[1] NE 3 THEN RETURN,-1
+	
+	IF S[0] EQ 1 THEN ECIcoord=geo2eci_singlepoint(gcoord,times(0)) ELSE BEGIN
+		IF N_ELEMENTS(times) NE S[2] THEN RETURN,-1
+		ECIcoord=DBLARR(3,S[2])	
+		FOR i=0L,S[2]-1 DO ECIcoord(*,i)=geo2eci_singlepoint(gcoord(*,i),times(i))
+	ENDELSE
+
+	RETURN,ECIcoord
+END
+;====================================================================================

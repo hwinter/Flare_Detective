@@ -1,0 +1,111 @@
+;+
+; NAME:
+;
+; pg_spg_uniformrates
+;
+; PURPOSE:
+;
+; correct a count or rate spectrogram for the channel width
+;
+; CATEGORY:
+;
+; spectrogram utilities
+;
+; CALLING SEQUENCE:
+;
+; spg_out=pg_spg_uniformrates(spg_in [,/convert_edges])
+;
+; INPUTS:
+;
+; spg_in: spectrogram structure, y should be given as edges
+;
+; OPTIONAL INPUTS:
+;
+; 
+;
+; KEYWORD PARAMETERS:
+;
+; convert_edges: is iset, convert the edges to averages in the output spg
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; AUTHOR:
+;
+; Paolo Grigis, Institute of Astronomy, ETH Zurich
+; pgrigis@astro.phys.ethz.ch
+;
+; MODIFICATION HISTORY:
+;
+; 02-APR-2004 written pg
+; 31-OCT-2006 added checking for error spectrogram tag
+;
+;-
+
+FUNCTION pg_spg_uniformrates,spg,convert_edges=convert_edges
+
+   newspg=rem_tag(spg,'spectrogram')
+   newspg=rem_tag(newspg,'y')
+
+   edges=spg.y
+
+   IF size(edges,/n_dimensions) NE 2 THEN return,-1
+
+   width=edges[1,*]-edges[0,*]
+   nw=n_elements(width)
+
+   spectrogram=spg.spectrogram
+   if have_tag(spg,'ESPECTROGRAM') then doerror=1 else doerror=0
+
+   IF doerror THEN  newspg=rem_tag(newspg,'espectrogram')
+
+   if doerror then errspectrogram=spg.espectrogram
+   
+
+   s=size(spectrogram,/dimensions)
+
+   FOR i=0,s[0]-1 DO spectrogram[i,*]=spectrogram[i,*]/width
+
+   if doerror then begin 
+       FOR i=0,s[0]-1 DO errspectrogram[i,*]=errspectrogram[i,*]/width
+   endif
+
+   IF keyword_set(convert_edges) THEN $
+      edge_products,edges,mean=y ELSE $
+      y=ed
+
+
+   if doerror then $
+     out_spg=create_struct('spectrogram',spectrogram,'espectrogram',errspectrogram,'y',y,newspg) $
+   else $
+     out_spg=create_struct('spectrogram',spectrogram,'y',y,newspg)
+   
+   RETURN,out_spg
+
+END
+

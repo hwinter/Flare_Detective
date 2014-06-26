@@ -1,0 +1,26 @@
+;+
+; NAME:
+;   approx
+;
+; PURPOSE:
+;   return an approximate value of the input float or double 
+;
+; INPUT: 
+;   x: float or double
+;   n: number of significant digits to retain, integer GE 1
+;
+; HISTORY:
+;   wiritten 02-DEC-2002 by Paolo Grigis
+;                        
+;-
+
+FUNCTION approx,x,n
+
+x=double(x)
+
+IF (x EQ 0.)OR(n GT 16) THEN RETURN,x ELSE BEGIN
+    xapp=round(x/(10d^floor(alog10(x)-n+1)),/L64)*10d^(floor(alog10(x)-n+1))
+    RETURN,xapp
+ENDELSE
+
+END

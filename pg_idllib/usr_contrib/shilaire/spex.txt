@@ -1,0 +1,53 @@
+----------START:
+spex_proc
+data,hessi,front
+_1file,Ebudget2/20020226/hsi_spectrum_20020226_102400.fits
+dfile,Ebudget2/20020226/hsi_srm_20020226_102400.fits
+preview
+graph
+back_order,0 | ,1 | background,null
+background
+
+select_interval
+count
+free,1,1,1,1,0,0
+erange,10,100
+spyrange,0.01,1e6
+
+a_cutoff=[1.0,1.6]
+
+photon
+fit
+
+create_ps
+--------------------
+-------- shutter change:
+
+
+------------------------
+;to save from SPEX/restore into IDL:
+idl,spex_save_data,/ALL,'spex_save_data.dat'
+EXIT
+RESTORE,'spex_save_data.dat',/VERB
+
+edge_products,edges,mean=eph
+
+phflux=(OBSI-BACKI)/CONVI
+err_phflux=sqrt(eobsi^2 + ebacki^2)/convi
+bkflux=BACKI/CONVI
+
+th_flux=f_vth(edges,apar_arr[0:1])
+a_cutoff=[1,1.5]
+non_th_flux=f_bpow(eph,[apar_arr[2:5],a_cutoff])
+
+;PLOT things
+PLOT, eph,th_flux+non_th_flux,/XLOG,/YLOG
+OPLOT,eph,th_flux,linestyle=1
+OPLOT,eph,non_th_flux,linestyle=2
+
+;----------------------------------------------
+;----------------------------------------------
+
+
+
+

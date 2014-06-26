@@ -1,0 +1,158 @@
+;+
+; NAME:
+;
+; pg_xrt_plotfilters
+;
+; PURPOSE:
+;
+; plot an overview of the XRT filters used in a given time interval
+;
+; CATEGORY:
+;
+; Hinode/XRT data quicklooks
+;
+; CALLING SEQUENCE:
+;
+; pg_xrt_plotfilter,time_intv [ plus all keyword accepted by utplot minus all y-axis related stuff]
+;
+; INPUTS:
+;
+; time_intv: a time interval in any format accepted by anytim
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; AUTHOR:
+;
+; Paolo Grigis, CfA
+; pgrigis@cfa.harvard.edu
+;
+; MODIFICATION HISTORY:
+;
+; 19-SEP-2007 written
+;
+;-
+
+;.comp pg_xrt_plotfilters
+
+PRO pg_xrt_plotfilters_test
+
+  time_intv='06-Jun-2007 '+['06:00','07:00']
+  pg_xrt_plotfilters,time_intv
+
+END
+
+PRO pg_xrt_plotfilters,time_intv_in,charsize=charsize,imcolor=imcolor $
+                      ,position=position,timetitle=timetitle $
+                      ,title=title,showimsize=showimsize 
+
+  tvlct,r,g,b,/get
+  linecolors
+
+  ;check input variables
+
+  position=fcheck(position,[0.1,0.1,0.97,0.975])
+
+  time_intv=anytim(time_intv_in)
+  charsize=fcheck(charsize,2)
+
+  imcolor=fcheck(imcolor,2)
+
+  ;get XRT image time in time_intv
+
+  xrt_cat,time_intv[0],time_intv[1],cat,files
+
+  IF size(cat,/type) EQ 8 THEN BEGIN  ;structure returned
+     nxrtimages=n_elements(cat)
+  ENDIF ELSE BEGIN 
+     nxrtimages=0
+  ENDELSE
+
+  timetitle=fcheck(timetitle,'Time Interval: '+strmid(anytim(time_intv[0],/vms),0,20) $
+                   +' to '+strmid(anytim(time_intv[1],/vms),0,20))
+  title=fcheck(title,' ')
+
+  ;setting up filters etc...
+
+;  fw1tickpos=[3,5,7,9,11];open not necessary
+;  fw2tickpos=[4,6,8,10,12]
+
+  fw1tickpos=[10,8,7,6,5]       ;open not necessary
+  fw2tickpos=[11,9,12,4,3]
+  fw1tickpos=15-[10,8,7,6,5]       ;open not necessary
+  fw2tickpos=15-[11,9,12,4,3]
+
+  fwtickpos=[fw1tickpos,fw2tickpos]
+
+  fw1names=['Al_poly','C_poly','Be_thin','Be_med','Al_med']
+  fw2names=['Al_mesh','Ti_poly','Gband','Al_thick','Be_thick']
+
+  fwnames=([fw1names,fw2names])
+
+  utplot,time_intv,[-1,-1],0,yrange=[2,13],ystyle=1,/xstyle,yticks=9 $
+        ,ytickv=fwtickpos,ytickname=fwnames,position=position,charsize=charsize $
+        ,yticklen=1d-6,xtitle=timetitle,title=title
+
+;  axis,time_intv[1],/yaxis,yrange=[2,13],yticks=4,ytickv=fw2tickpos,/ystyle $
+;       ,ytickname=fw2names,charsize=charsize,ticklen=0
+
+
+  FOR i=0,4 DO BEGIN 
+     oplot,!X.crange,fw1tickpos[[i,i]],linestyle=0,thick=2
+     oplot,!X.crange,fw2tickpos[[i,i]],linestyle=2,thick=2
+  ENDFOR
+
+
+  IF nxrtimages GT 0 THEN BEGIN 
+
+     fw1indices=xrt_fwstr2num(cat.ec_fw1_,fw=1)-1
+     fw2indices=xrt_fwstr2num(cat.ec_fw2_,fw=2)-1
+     time=anytim(cat.date_obs)
+
+     FOR i=0,nxrtimages-1 DO BEGIN 
+        IF fw1indices[i] GE 0 THEN $
+           outplot,time[[i,i]],fw1tickpos[fw1indices[i]]+[-0.4,0.4],0,color=imcolor
+        IF fw2indices[i] GE 0 THEN $
+           outplot,time[[i,i]],fw2tickpos[fw2indices[i]]+[-0.4,0.4],0,color=imcolor
+     ENDFOR
+  ENDIF
+
+  
+  tvlct,r,g,b
+
+END 
+
+

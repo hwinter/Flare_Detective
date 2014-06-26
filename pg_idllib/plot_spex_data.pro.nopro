@@ -1,0 +1,725 @@
+;
+;graphs for the minicolloquium on microflares, 14-JAN-2002
+;
+
+
+
+
+;---------------------------------------------------------------
+;global variables and inizializations
+;---------------------------------------------------------------
+
+dir='~/work/minicoll/psplots/' ;dir for plotting the data
+factor=1.0                    ;line thickness factor for working with
+                              ;the PS device
+
+linecolors                ;smart colors for plotting
+bremcolor=8
+emlinecolor=3
+;emlinecolorsm=11
+powerlawcolor=10
+totalcolor=1
+rhessicolor=0
+
+psxsize=24
+psysize=18
+
+
+;---------------------------------------------------------------
+;synthetic emission spectrum calculations
+;---------------------------------------------------------------
+
+
+temp=kev2kel(0.9284)/1.d6       ; temperature in MK
+em=1.d5*0.027                   ; emission measure / 1E44 cm^-3
+bremem=em*1.d-5                 ; emission measure / 1E49 cm^-3
+binwidth=25./(4000.)            ; delta_x for energy
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
+;second fit: apar:
+;0.0253680     0.928518      1.90348      1.70122      7.13515      6.75210 
+;
+;photons=(obsi-backi)/conversion
+;ephotons=eobsi/conversion
+;ebackground=ebacki/conversion
+;idl,save,photons,filename='~/work/mfl3/photons.dat'
+;idl,save,ephotons,filename='~/work/mfl3/ephotons.dat'
+;idl,save,ebackground,filename='~/work/mfl3/ebackground.dat'
+;idl,save,apar,filename='~/work/mfl3/apar.dat'
+;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+restore,'~/work/mfl3/apar.dat'
+delta1=apar[3];-0.2
+delta2=apar[5]
+breakpoint=apar[4]
+ybreak=apar[2]*50^(delta1)*breakpoint^(-delta1)
+;ybreak=31.1423
+
+en=findgen(25/binwidth)*binwidth+1 ;array of energies in keV
+wave=wvl2nrg(en)                ;array of energies transformed in Angstroms
+
+sp=em*mewe_kev(temp,wave,/photon,/earth)/binwidth ; spectrum with lines
+bremsp=bremem*brem_49(en,kel2kev(temp*1d6)) ; continuum spectrum
+
+
+spbpow=breakpowerlaw(en,-delta1,-delta2,breakpoint,ybreak)
+spbpow2=rebin(spbpow,1000)
+
+
+en2=rebin(en,1000)              ;rebinning data for the plots to 1000 points
+wave2=rebin(wave,1000)          ;
+sp2=rebin(sp,1000)              ;
+bremsp2=rebin(bremsp,1000)      ;
+spbpow2=rebin(spbpow,1000)      ;
+
+
+
+;smoothed line spectrum 
+
+xx=en2-0.5*(max(en2)-min(en2))-min(en2)
+g=expo(xx,0,1)                  ;produce a normalized gaussian centered in 0
+
+;print,int_tabulated(xx,g); if you don't believe my word...
+
+convsp=vect_convolve(en2,sp2,g) ;smooth the spectrum with the convolution
+                                ;please note that the area is conserved!
+                                ;(because g has area=1)
+
+;smoothed line spectrum 
+
+xx=en-0.5*(max(en)-min(en))-min(en)
+xx2=en2-0.5*(max(en2)-min(en2))-min(en2)
+
+g=expo(xx,0,1)                  ;produce a normalized gaussian centered in 0
+g2=expo(xx2,0,1)
+;print,int_tabulated(xx,g); if you don't believe my word...
+
+convsp=vect_convolve(en,sp,g) ;smooth the spectrum with the convolution
+                                ;please note that the area is conserved!
+                                ;(because g has area=1)
+
+convsp2=rebin(convsp,1000)    ; rebinned for plotting
+
+convsp3=vect_convolve(en2,sp2,g2) ;quicker, but less good (?)
+
+;--------------------------------------------------------
+;default values for plotting
+;--------------------------------------------------------
+
+tickvalues=[3,4,5,6,7,8,9,10,20,30,40,50]
+ticknumber=11
+enrange=[3,50]
+yrange=[1e-3,1e5]
+
+
+;-------------------------------------------------------
+;plotting of the data
+;-------------------------------------------------------
+
+
+set_plot,'ps'
+
+IF !D.NAME EQ 'PS' THEN factor = 2.0 ELSE factor = 1.0
+
+device,/landscape,xoffset=1,yoffset=28.7;
+;device,xsize=29.7,ysize=21.0    ;please don't ask WHY it works... it does!
+device,ysize=psysize,xsize=psxsize
+
+ 
+;emission spectrum: thermal bremsstrahlung only
+device,filename=dir+'em-sp-bremonly.ps'
+
+plot,en2,bremsp2,xrange=enrange,yrange=yrange,/xlog $
+     ,/ylog,xstyle=1,ystyle=1 $
+     ,ytitle='photons cm!A-2!N keV!A-1!N s!A-1!N',xtitle='Energy in keV' $
+     ,xticks=ticknumber,xtickv=tickvalues
+
+oplot,en2,bremsp2,color=bremcolor,thick=2*factor
+
+device,/close
+
+
+;emission spectrum with lines
+device,filename=dir+'em-sp-bremlines.ps'
+
+plot,en2,sp2,xrange=enrange,yrange=yrange,/xlog $
+     ,/ylog,xstyle=1,ystyle=1 $
+     ,ytitle='photons cm!A-2!N keV!A-1!N s!A-1!N',xtitle='Energy in keV' $
+     ,xticks=ticknumber,xtickv=tickvalues
+
+oplot,en2,sp2,color=emlinecolor,thick=2*factor
+oplot,en2,bremsp2,color=bremcolor,thick=2*factor
+
+device,/close
+
+;emission spectrum with lines without overplot the continuum
+device,filename=dir+'em-sp-linesonly.ps'
+
+plot,en2,sp2,xrange=enrange,yrange=yrange,/xlog $
+     ,/ylog,xstyle=1,ystyle=1 $
+     ,ytitle='photons cm!A-2!N keV!A-1!N s!A-1!N',xtitle='Energy in keV' $
+     ,xticks=ticknumber,xtickv=tickvalues
+
+oplot,en2,sp2,color=emlinecolor,thick=2*factor
+
+device,/close
+
+;emission spectrum wit lines and convolution with line width
+device,filename=dir+'em-sp-bremlinessmoothed.ps'
+
+plot,en2,sp2,xrange=enrange,yrange=yrange,/xlog $
+     ,/ylog,xstyle=1,ystyle=1 $
+     ,ytitle='photons cm!A-2!N keV!A-1!N s!A-1!N',xtitle='Energy in keV' $
+     ,xticks=ticknumber,xtickv=tickvalues
+
+oplot,en2,sp2,color=emlinecolor,thick=2*factor
+
+oplot,en2,convsp2,color=emlinecolor,thick=2*factor
+
+device,/close
+
+
+;emission spectrum wit lines and convolution with line width only
+device,filename=dir+'em-sp-bremlinessmoothedonly.ps'
+
+plot,en2,convsp2,xrange=enrange,yrange=yrange,/xlog $
+     ,/ylog,xstyle=1,ystyle=1 $
+     ,ytitle='photons cm!A-2!N keV!A-1!N s!A-1!N',xtitle='Energy in keV' $
+     ,xticks=ticknumber,xtickv=tickvalues
+
+oplot,en2,convsp2,color=emlinecolor,thick=2*factor
+
+
+
+device,/close
+
+
+set_plot,'x'
+factor=1.0
+
+
+
+set_plot,'ps'
+
+IF !D.NAME EQ 'PS' THEN factor = 2.0 ELSE factor = 1.0
+
+device,/landscape,xoffset=1,yoffset=28.7;
+;device,xsize=29.7,ysize=21.0    ;please don't ask WHY it works... it does!
+device,ysize=psysize,xsize=psxsize
+
+
+;broken power law
+device,filename=dir+'em-sp-bremlinespowerlaw.ps'
+
+plot,en2,convsp2,xrange=enrange,yrange=yrange,/xlog $
+     ,/ylog,xstyle=1,ystyle=1 $
+     ,ytitle='photons cm!A-2!N keV!A-1!N s!A-1!N',xtitle='Energy in keV' $
+     ,xticks=ticknumber,xtickv=tickvalues
+
+oplot,en2,spbpow2,color=powerlawcolor,thick=2*factor
+
+oplot,en2,convsp2,color=emlinecolor,thick=2*factor
+
+device,/close
+
+
+;broken power law with total emission
+device,filename=dir+'em-sp-bremlinespowerlawtot.ps'
+
+plot,en2,convsp2,xrange=enrange,yrange=yrange,/xlog $
+     ,/ylog,xstyle=1,ystyle=1 $
+     ,ytitle='photons cm!A-2!N keV!A-1!N s!A-1!N',xtitle='Energy in keV' $
+     ,xticks=ticknumber,xtickv=tickvalues
+
+oplot,en2,spbpow2,color=powerlawcolor,thick=2*factor
+oplot,en2,convsp2,color=emlinecolor,thick=2*factor
+oplot,en2,spbpow2+convsp2,color=totalcolor,thick=2*factor
+
+device,/close
+
+set_plot,'x'
+factor=1.0
+
+;---------------------------------------------------
+;actual RHESSI data
+;--------------------------------------------------
+restore,'~/work/mfl3/photons.dat'
+restore,'~/work/mfl3/ephotons.dat'
+restore,'~/work/mfl3/ebackground.dat'
+
+ex=replicate(0.5,47)
+ey=2*sqrt(ephotons^2+ebackground^2)
+
+ind=where(photons-ey LE 0)
+eyminus=ey
+eyminus[ind]=photons[ind]-1d-7
+
+
+xphot=findgen(47)+3.5
+
+
+set_plot,'ps'
+
+IF !D.NAME EQ 'PS' THEN factor = 2.0 ELSE factor = 1.0
+
+device,/landscape,xoffset=1,yoffset=28.7;
+;device,xsize=29.7,ysize=21.0    ;please don't ask WHY it works... it does!
+device,ysize=psysize,xsize=psxsize
+
+device,filename=dir+'RHESSI0.ps'
+
+
+plot,en2,photons,xrange=enrange,yrange=yrange,/xlog $
+     ,/ylog,xstyle=1,ystyle=1 $
+     ,ytitle='photons cm!A-2!N keV!A-1!N s!A-1!N',xtitle='Energy in keV' $
+     ,xticks=ticknumber,xtickv=tickvalues,thick=2*factor,psym=3
+
+eplot,xphot,photons,ex=ex,ey=ey,/upper,color=rhessicolor;,thick=2*factor
+eplot,xphot,photons,ex=ex,ey=eyminus,/lower,color=rhessicolor;,thick=2*factor
+
+device,/close
+
+
+
+device,filename=dir+'RHESSI1.ps'
+
+
+plot,en2,convsp2,xrange=enrange,yrange=yrange,/xlog $
+     ,/ylog,xstyle=1,ystyle=1 $
+     ,ytitle='photons cm!A-2!N keV!A-1!N s!A-1!N',xtitle='Energy in keV' $
+     ,xticks=ticknumber,xtickv=tickvalues,thick=2*factor
+
+
+oplot,en2,convsp2,color=emlinecolor,thick=2*factor
+
+oplot,en2,spbpow2,color=powerlawcolor,thick=2*factor
+
+oplot,en2,spbpow2+convsp2,color=total,thick=2*factor
+
+eplot,xphot,photons,ex=ex,ey=ey,/upper,color=rhessicolor;,thick=2*factor
+eplot,xphot,photons,ex=ex,ey=eyminus,/lower,color=rhessicolor;,thick=2*factor
+
+device,/close
+
+
+device,filename=dir+'RHESSI2.ps'
+
+restore,'~/work/mfl3/photons.dat'
+restore,'~/work/mfl3/ephotons.dat'
+ex=replicate(0.5,47)
+plot,en2,spbpow2+convsp2,xrange=enrange,yrange=yrange,/xlog $
+     ,/ylog,xstyle=1,ystyle=1 $
+     ,ytitle='photons cm!A-2!N keV!A-1!N s!A-1!N',xtitle='Energy in keV' $
+     ,xticks=ticknumber,xtickv=tickvalues,thick=2*factor
+
+
+;oplot,en2,convsp2,color=emlinecolor
+
+;oplot,en2,spbpow2,color=powerlawcolor
+
+oplot,en2,spbpow2+convsp2,color=total
+
+
+eplot,xphot,photons,ex=ex,ey=ey,/upper,color=rhessicolor
+eplot,xphot,photons,ex=ex,ey=eyminus,/lower,color=rhessicolor
+
+device,/close
+
+set_plot,'x'
+factor=1.0
+
+
+
+
+
+
+
+
+;{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{
+;
+;END OF DATA GENERATION, next lines are for documentation
+;pourpose only
+;
+;}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
+
+;--------------------------------------------------
+;old routine for plotting data and fits
+;--------------------------------------------------
+
+
+;.comp /global/hercules/users/pgrigis/mfl2/plot2.pro
+;.comp /global/hercules/users/pgrigis/mfl2/power_law.pro
+
+PRO plot2
+
+set_plot,'ps'
+;device,filename='plot2.eps',/encap,xsize=18,ysize=13
+;!P.position=[0.15,0.15,0.95,0.95]
+device,filename='plot2.ps'
+
+cd,'/global/hercules/users/pgrigis/mfl2'
+a=power_law(1,1)
+cd,'/global/tethys/data1/pgrigis/mfl2/spexdata'
+fit3=[0.000676295,0.949847,3.09292e-05,3.82925]
+em=fit3[0]
+temp=fit3[1]
+delta=fit3[3]
+z=fit3[2]
+a=power_law(50,delta)*z
+;em=0.000589419
+;temp=0.986906
+restore,'photonfl2.dat' 
+restore,'ebgphotonfl2.dat'
+restore,'eobsphotonfl2.dat'
+ex=replicate(0.5,47)
+plot,findgen(47)+3.5,photons,/xlog,/ylog,xrange=[2,60],yrange=[1e-4,1e3]$
+    ,psym=3,ystyle=1,xstyle=1,xtitle='energy [ keV ]'$
+    ,ytitle='photons [ s!A-1!N keV!A -1!N cm!A -2!N ]'$
+    ,xtickV=[2,3,4,5,6,7,8,9,10,20,30,40,50,60]$
+    ,xticks=13,xtickname=['2',' ',' ',' ',' ',' ',' ',' ',$
+    '10',' ',' ',' ',' ','60'],xcharsize=1.25,ycharsize=1.25
+eplot,findgen(47)+3.5,photons,ex=ex,ey=eobs+ebg,/upper
+eplot,findgen(47)+3.5,photons,ex=ex,ey=eobs+ebg,/lower
+;
+;error should be sqrt(eobs^2+ebg^2)
+;
+oplot,findgen(48*5)/5+2.5,brem_49(findgen(48*5)/5+2.5,temp)*em,$
+linestyle=1,thick=2.5
+oplot,findgen(48*5)/5+2.5,power_law(findgen(48*5)/5+2.5,-delta)*a,$
+linestyle=2
+oplot,findgen(48*5)/5+2.5,brem_49(findgen(48*5)/5+2.5,temp)*em+$
+power_law(findgen(48*5)/5+2.5,-delta)*a,linestyle=0
+restore,'photonsunbg.dat'
+restore,'eobsphotonsunbg.dat'
+restore,'ebgphotonsunbg.dat' 
+em=0.00187731
+temp=0.558654
+oplot,findgen(47)+3.5,photons,psym=3     
+eplot,findgen(47)+3.5,photons,ex=ex,ey=eobs+ebg,/upper
+eplot,findgen(47)+3.5,photons,ex=ex,ey=eobs+ebg,/lower
+oplot,findgen(48*5)/5+2.5,brem_49(findgen(48*5)/5+2.5,temp)*em
+
+device,/close
+set_plot,'x'
+
+END
+
+
+
+;-------------------------------------------------
+;recalulation of microflares data ->new system
+;-------------------------------------------------
+
+;from GUI
+;
+;02-MAY-2002 01:30/02:45
+;detectors 1,3-6,8-9
+;files: ~/work/mfl3/spectrum-02MAY2002.fits &  ~/work/mfl3/srm-02MAY2002.fits
+
+;+ only one detector: 4
+;files: ~/work/mfl3/spectrum-02MAY2002-det4.fits &  ~/work/mfl3/srm-02MAY2002-det4.fits
+
+;+ only one detector: 3
+;files: ~/work/mfl3/spectrum-02MAY2002-det3.fits &  ~/work/mfl3/srm-02MAY2002-det3.fits
+
+
+
+;-------------------------------------------------------------
+;new fitting in spex with line emission!!!!
+;-------------------------------------------------------------
+
+cd,'~/work/mfl3'
+
+spex_proc
+data,hessi,front
+_1file,~/work/mfl3/spectrum-02MAY2002.fits
+dfile,~/work/mfl3/srm-02MAY2002.fits 
+preview
+
+risetime=['02-May-02 01:46:30.000','02-May-02 01:47:00']
+decaytime=['02-May-02 01:48:40.000','02-May-02 01:49:20']
+bgtime=['02-May-02 01:44:40.000',' 02-May-02 01:46:00']
+
+eplots,1
+graph
+energy_bands,3,6,6,9,9,12,12,25
+scale_bands,40,10,1,1
+th_ytype,1
+th_yrange,0.001,1000
+graph
+zoom
+back_order,0,0,0,0,0
+print,back_order
+idl,tb=dblarr(2,6,5)
+for i=0,5 do for j=0,4 do tb[*,i,j]=anytim(bgtime)
+background
+;answer yes
+
+xselect=anytim(risetime)-anytim('02-May-02')     
+select
+;give 'use xselect in program'
+
+;;;;;;;;;;;;;;;;;;;;;;;
+;fitting first spectrum
+;;;;;;;;;;;;;;;;;;;;;;;
+
+/fit
+spyrange,0.01,10000
+spxrange,3,20
+
+photon
+
+;fitted 5-50 
+;apar:= 0.0270015     0.928409     0.326455      2.40001      7.48178      6.54808
+
+
+;set a[2]=1e-10
+erange,3,6
+free,1,1,0,0,0,0
+fit
+fit
+photon
+;create_ps 
+
+;;;;;;;;;;;;;;;;;;;;;;;;
+;fitting second spectrum
+;;;;;;;;;;;;;;;;;;;;;;;;
+
+xselect=anytim(decaytime)-anytim('02-May-02')     
+select
+; give 'use xelect in program'
+
+fit
+fit
+photon
+;create_ps
+
+
+
+
+
+;+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+;+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+;
+;
+;info on used routines:....
+;
+;
+
+
+
+
+
+;--------------------------------------------------------
+;Color for line colors
+;-----------------------------------------------------------
+
+
+
+; INDEX NUMBER   COLOR PRODUCED (if use default colors)
+;       0               black
+;       1               maroon
+;       2               red
+;       3               pink
+;       4               orange
+;       5               yellow
+;       6               olive
+;       7               green
+;       8               dark green
+;       9               cyan
+;       10              blue
+;       11              dark blue
+;       12              magenta
+;       13              purple
+;
+
+;---------------------------------------------------------
+;info on procedures
+;---------------------------------------------------------
+
+;+
+;
+; NAME:
+; BREM_49
+;
+; PURPOSE:
+; This function calculates the optically thin continuum thermal bremsstrahlung
+; photon flux incident on
+; the Earth from an isothermal plasma on the Sun.  Normalization is for an emission
+; measure on the Sun of 1.e49 cm-3
+;
+; CATEGORY:
+; SPECTRA
+;
+; CALLING SEQUENCE:
+; Flux = BREM_49( Energy, Kt )
+;
+; CALLS:
+; ACGAUNT (Gaunt factor function)
+;
+; INPUTS:
+;       Energy - Energy vector in keV
+; Kt     - Plasma temperature in keV, a scalar.
+;
+; OPTIONAL INPUTS:
+; none
+;
+; OUTPUTS:
+;       Returns the differential photon flux in units of
+; photons/(cm2 s keV) per (1e49 cm-3 emission measure)
+;
+; OPTIONAL OUTPUTS:
+; none
+;
+; KEYWORDS:
+; VERBOSE - If set, prints a message.
+; COMMON BLOCKS:
+; none
+;
+; SIDE EFFECTS:
+; none
+;
+; RESTRICTIONS:
+; Use at temperatures above line energies.  Never valid for kT lt 0.1 keV.
+;
+; PROCEDURE:
+; bremsstrahlung radiation function
+; differential spectrum seen at Earth in units of photon/(cm2 s keV)
+;
+; MODIFICATION HISTORY:
+; Identical with the SMM/HXRBS group's DCP 1VTH for an emission measure of 1.e49 cm-3
+; Version 2, Documented, RAS, 19-May-1996
+; VERSION 3, 21-MAY-1996, Changed to call acgaunt instead of tegfc(obsolete)
+; VERSION 4, 23-oct-1996, Made to return row vector
+; 21-jan-2002, return float, ras.
+;-
+
+
+;+
+;  NAME:
+;    mewe_spec
+;  PURPOSE:
+;    Compute a Mewe thermal spectrum (line + continuum) for EM=1.e44 cm^-3
+;  CALLING SEQUENCE:
+;    Flux = mewe_spec(Te6,wave)                 ; ph s-1 
+;    Flux = mewe_spec(Te6,wave,/photon)         ; ph s-1
+;    Flux = mewe_spec(Te6,wave,/erg)            ; erg s-1
+;    Flux = mewe_spec(Te6,wave,/cosmic)         ; Cosmic abundances
+;
+;  INPUTS:
+;    Te6        = Electron Temperature in MK (may be a vector)
+;    Wave       = Vector of wavelengths (Ang) (centers of the wavelength bins)
+;                 or, if keyword EDGES is set,
+;                 a 2xN array of the 2 wavelength edges of N bins.
+;
+;  OUTPUTS:
+;    Flux       = Fluxes in ph s-1 or erg s-1 (total flux with each bin)
+;                       Fluxes = fltarr(N_elements(Te6),N_elements(wave))
+;
+;  OPTIONAL INPUT KEYWORDS:
+;    Photon     = If set, calculation is made in ph s-1 (default)
+;    Erg        = If set, calculation is made in erg s-1
+;    Cosmic     = If set, use cosmic abundances (solar is default)
+;    Edges      = If set, interpret Wave as a 2xN set of wavelength boundaries
+;    file_in    = To specify the input file for linflx explicity.
+;  OPTIONAL OUTPUT KEYWORDS:
+;    Abun       = Abundances used for calculation
+;    elem       = Elements corresponding to the abundances
+;    cont_flux  = Continuum flux alone (without line contribution).
+;    dwave      = Widths of wavelength bins (Ang)
+;    wave_range = Interval over which lines are extracted (Ang)
+;
+;  METHOD:
+;    Calls linflx and conflx.  Linflx reads the line data from either
+;    $DIR_SXT_SENSITIVE/mewe_cosmic.genx or $DIR_SXT_SENSITIVE/mewe_solar.genx
+;
+;    The mewe_cosmic.genx file is taken from the following references:
+;
+;    Mewe, Gronenschild, van den Oord, 1985, (Paper V)  A. & A. Suppl., 62, 197
+;    Mewe, Lemen, and van den Oord,    1986, (Paper VI) A. & A. Suppl., 65, 511
+;
+;    The solar coronal abundances in mewe_solar.genx a adapted from:
+;
+;    Meyer, J.-P., 1985, ApJ Suppl., 57, 173.
+;
+;  MODIFICATION HISTORY:
+;    29-oct-92, Written, J. R. Lemen, LPARL
+;    25-feb-93, JRL, Added /cosmic option
+;     7-jul-93, JRL, Added the file_in= keyword
+;     8-jun-94, JMM, Added IF block to avoid crashing when the line
+;                    flux comes out to be zero. 
+;    13-jul-94, JRL, Added /edges a la R. A. Schwartz cira 1993
+;     2-aug-94, JRL, Added the file_in= keyword (again!). Changed header.
+;    21-Jun-95, JRL, linflx changed to assume EM=1.e44 cm-3
+;     6-Jan-96, JRL, Added the Mewe et al references to the header
+;    16-Dec-96, LWA, Added the Meyer reference to the header.
+;-
+
+;+
+; NAME:
+;      WVL2NRG
+;
+; PURPOSE: 
+;      convert wavelengths (Angstroms) to energies (keV)
+;
+; CALLING SEQUENCE:
+;      wvl2nrg(l)
+;
+; INPUTS:
+;      l: wavelength in Angstroms
+;
+; OUTPUT:
+;      energy in keV       
+;       
+; KEYWORDS:
+;      none  
+;
+; COMMENT:
+;       uses Planck constant: h=4.13566727 10^-15 eV s 
+;            light velocty:   c=299792458 m s^-1
+;       e=hc/l * 10^10 (A/m) * 0.001 (keV/eV)
+;       physical constants taken from 1998 CODATA values
+;       
+;
+; VERSION:
+;       1.1 01-OCT-2002
+; HISTORY:
+;       09-JUL-2002 written
+;       01-OCT-2002 changed conversion factor slightly
+;
+; AUTHOR
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;-
++
+; NAME:
+;      kel2kev
+;
+; PURPOSE: 
+;      convert temperature (Kelvin) to energy (keV)
+;
+; CALLING SEQUENCE:
+;      e=kel2kev(t)
+;
+; INPUTS:
+;      t: temperature in Kelvin 
+;
+; OUTPUT:
+;      e: energy in keV 
+;       
+; KEYWORDS:
+;        
+;
+; HISTORY:
+;       12-JUL-2002 written
+;       30-SEP-2002 changed the conversion factor slightly
+;
+; COMMENT:
+;       e=k_b *t   k_b=Boltzmann constant
+;                  k_b=8.617342(15)*10^-5 eV K^-1
+;       physical constants taken from 1998 CODATA values
+;
+; AUTHOR
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;-

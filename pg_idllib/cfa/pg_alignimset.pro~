@@ -1,0 +1,133 @@
+;+
+; NAME:
+;
+; pg_alignimset
+;
+; PURPOSE:
+;
+; returns the shift between a set of images
+;
+; CATEGORY:
+;
+;
+;
+; CALLING SEQUENCE:
+;
+; xyoffset=pg_align2im(imset,imrefind=inrefind)
+;
+; INPUTS:
+;
+;  imset:array nx by ny by nimages with the images
+;  imrefind: index of the reference image (default: 0, first image)
+;
+; OPTIONAL INPUTS:
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+; xyoffset= array of two elements, the x and y offset in pixels between the
+;           images. This is the offset of the second image relative to the first.
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; AUTHOR:
+;
+; Paolo Grigis, pgrigis@cfa.harvard.edu
+; 
+; MODIFICATION HISTORY:
+;
+; 02-APR-2008 written PG
+;-
+
+
+FUNCTION pg_alignimset,imset,refimind=refimind,nsquare=nsquare $
+                      ,cumulative=cumulative,refimage=refimage.mask=mask
+
+  s=size(imset)
+  
+  IF s[0] NE 3 THEN BEGIN 
+     print,'Invalid input'
+     return,!values.f_nan
+  ENDIF
+
+  xyout=fltarr(2,s[3])
+  
+  renormalize=1
+
+  IF n_elements(refimind) EQ 0 THEN BEGIN 
+     refimind=0
+     renormalize=0
+  ENDIF
+
+
+  IF keyword_set(mask) THEN BEGIN 
+     nx=s[1]
+     ny=s[2]
+     x=findgen(nx)-nx/2
+     y=findgen(ny)-nx/2         
+     xx=x#(x*0+1) 
+     yy=(y*0+1)#y
+     rr=sqrt(xx*xx+yy*yy)
+     themask=(1-rr/(nx-5))>0
+  ENDIF
+
+
+  refimage=fcheck(refimage,imset[*,*,refimind>0<(s[3]-1)])
+  IF keyword_set(mask) THEN refimage*=mask
+
+  IF keyword_set(cumulative) THEN BEGIN 
+     print,'CUMULATIVE'
+     FOR i=1,s[3]-1 DO xyout[*,i]=pg_align2im(imset[*,*,i],imset[*,*,i-1])
+     xyout[0,*]=total(xyout[0,*],/cumulative)
+     xyout[1,*]=total(xyout[1,*],/cumulative)
+  ENDIF ELSE BEGIN
+     IF keyword_set(mask) THEN BEGIN 
+        FOR i=0,s[3]-1 DO xyout[*,i]=pg_align2im(imset[*,*,i]*themask,refimage,nsquare=nsquare)
+     ENDIF $
+     ELSE $
+        FOR i=0,s[3]-1 DO xyout[*,i]=pg_align2im(imset[*,*,i],refimage,nsquare=nsquare)
+
+  ENDELSE
+
+  IF renormalize THEN BEGIN 
+     xyout[0,*]=xyout[0,*]-xyout[0,refimind]
+     xyout[1,*]=xyout[1,*]-xyout[1,refimind]
+  ENDIF
+ 
+  RETURN,xyout
+
+END
+
+
+
+
+
+
+

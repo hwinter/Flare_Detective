@@ -1,0 +1,66 @@
+;+
+; NAME:
+;
+;   pg_parse_conditionfile
+;
+; PURPOSE:
+;
+;   read a text files with TAGS to use as conditions for RHESSI flare selection
+;
+; CATEGORY:
+;
+;   RHESSI util
+;
+; CALLING SEQUENCE:
+;
+;   condlist=pg_parse_conditionfile(filename)
+;
+; INPUTS:
+;
+;   filename: path to a valid file name
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+; an IDL list with the tag names and values
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+; 
+; AUTHOR:
+; 
+;   Paolo Grigis ( pgrigis@astro.phys.ethz.ch )
+;
+; MODIFICATION HISTORY:
+;
+;   12-JAN-2007 written PG
+;
+;-

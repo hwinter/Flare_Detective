@@ -1,0 +1,158 @@
+;+
+; NAME:
+;
+; pg_xrt_plotfov
+;
+; PURPOSE:
+;
+; plot an overview of the XRT field of view in a given time interval
+;
+; CATEGORY:
+;
+; Hinode/XRT data quicklooks
+;
+; CALLING SEQUENCE:
+;
+; pg_xrt_plotfov,time_intv 
+;
+; INPUTS:
+;
+; time_intv: a time interval in any format accepted by anytim
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; AUTHOR:
+;
+; Paolo Grigis, CfA
+; pgrigis@cfa.harvard.edu
+;
+; MODIFICATION HISTORY:
+;
+; 19-SEP-2007 written
+;
+;-
+
+;.comp pg_xrt_plotfov
+
+PRO pg_xrt_plotfov_test
+
+  time_intv='06-Jun-2007 '+['06:00','07:00']
+  pg_xrt_plotfov,time_intv
+
+END
+
+PRO pg_xrt_plotfov,time_intv_in,position=position,title=title,fovcolor=fovcolor $
+                  ,plotar=plotar,_extra=_extra,offset=offset,offcharsize=offcharsize $
+                  ,cat=cat 
+
+
+ 
+  time_intv=anytim(time_intv_in)
+  charsize=fcheck(charsize,2)
+  fovcolor=fcheck(fovcolor,12)
+ 
+  ;get XRT images catalog in time_intv
+
+  IF NOT exist(cat) OR size(cat,/type) NE 8 THEN xrt_cat,time_intv[0],time_intv[1],cat,files
+
+  IF size(cat,/type) EQ 8 THEN BEGIN  ;structure returned
+     nxrtimages=n_elements(cat)
+  ENDIF ELSE BEGIN 
+     nxrtimages=0
+  ENDELSE
+
+  title=fcheck(title,'Time Interval: '+strmid(anytim(time_intv[0],/vms),0,20) $
+                    +' to '+strmid(anytim(time_intv[1],/vms),0,20))
+;  title=fcheck(title,' ')
+
+
+  data=fltarr(4,4)
+  timeobs=time_intv[0]+0.5*(time_intv[1]-time_intv[0])
+
+
+  map=make_map(data,xc=0,yc=0,dx=768,dy=768,time=anytim(timeobs,/ccsds))
+
+  plot_map,map,/limb,title=title,position=position,_extra=_extra
+
+  IF nxrtimages NE 0 THEN BEGIN 
+
+     xmin=cat.xcen-0.5*cat.fovx
+     xmax=cat.xcen+0.5*cat.fovx
+     ymin=cat.ycen-0.5*cat.fovy
+     ymax=cat.ycen+0.5*cat.fovy
+
+
+     tvlct,r,g,b,/get
+     linecolors
+
+     FOR i=0,nxrtimages-1 DO BEGIN 
+
+        oplot,[xmin[i],xmax[i],xmax[i],xmin[i],xmin[i]], $
+              [ymin[i],ymin[i],ymax[i],ymax[i],ymin[i]], $
+              color=fovcolor
+
+     ENDFOR
+     
+  ENDIF
+
+  IF keyword_set(plotar) THEN BEGIN 
+
+     offset=fcheck(offset,[0,-100])
+     offcharsize=fcheck(offcharsize,charsize)
+
+     IF time_intv[1]-time_intv[0] LT 86400. THEN $
+        data=get_nar(anytim(timeobs,/ccsds),anytim(timeobs,/ccsds)) $
+     ELSE $
+        data=get_nar(anytim(time_intv[0],/ccsds),anytim(time_intv[1],/ccsds))
+
+     IF size(data,/tname) EQ 'STRUCT' THEN BEGIN 
+
+        pg_setplotsymbol,'STAR',size=3
+
+        FOR i=0,n_elements(data)-1 DO plots,data[i].x,data[i].y,color=2,psym=8
+
+        oplot_nar,data,offset=offset,align=0.5,charsize=offcharsize
+
+     ENDIF
+
+  ENDIF
+
+  tvlct,r,g,b
+
+END 
+
+

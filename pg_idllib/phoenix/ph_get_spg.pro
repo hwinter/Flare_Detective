@@ -1,0 +1,130 @@
+;+
+; NAME:
+;       ph_get_spg
+;
+; PURPOSE: 
+;       get a spectrogram form a rag fits file
+;
+; CALLING SEQUENCE:
+;       ptr=ph_get_spg(time=time,filename=filename,ragflux=ragflux)
+;
+; INPUTS:
+;       time: time (or time interval) of phoenix data to be taken
+;       filename: filename of the fit file, overrides time_intv
+;       ragflux: gives the rag linear flux
+;
+; OUTPUT:
+;       ptr, an array of pointer to spg structures
+;
+; HISTORY:
+;       17-DEC-2002 written
+;
+; AUTHOR:
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;-
+
+FUNCTION ph_get_spg,time=time,filename=filename,ragflux=ragflux
+
+
+IF NOT keyword_set(filename) THEN BEGIN
+    
+    IF NOT keyword_set(time) THEN BEGIN
+        print,'input NOK 1'
+        RETURN,-1
+    ENDIF
+
+    time=anytim(time)
+    dim=size(time)
+
+    IF dim[0] EQ 0 THEN BEGIN ;only one file
+        filename=ph_get_filename(time)
+        IF filename EQ '' THEN BEGIN
+            print,'no file found'
+            RETURN,-1
+        ENDIF
+        ragfitsread,filename,image,xaxis,yaxis,dateobs=dateobs
+        xaxis=double(xaxis)+anytim(dateobs)
+        spg={spectrogram:image,x:xaxis,y:yaxis}
+        IF keyword_set(ragflux) THEN $
+          spg.spectrogram=10d^(spg.spectrogram/45d)-10d
+        ptr=ptr_new(spg)
+
+    ENDIF $
+    ELSE BEGIN ;many files
+        
+
+        IF dim[1] NE 2 THEN BEGIN
+            print,'time_intv NOK' 
+            RETURN,-1
+        ENDIF
+
+        tstart=time[0]
+        tend=time[1]
+        dt=tend-tstart
+        IF dt LE 0 THEN BEGIN
+            print,'start after end' 
+            RETURN,-1
+        ENDIF
+        
+        startfile=ph_get_filename(tstart)
+        endfile=ph_get_filename(tend)
+
+        IF (startfile EQ '') OR (endfile EQ '') THEN BEGIN
+            print,'bad time_intv: no file (start and/or end)' 
+            RETURN,-1
+        ENDIF
+      
+        nowfile=startfile
+        nowtime=tstart
+
+        ragfitsread,startfile,image,xaxis,yaxis,dateobs=dateobs
+        xaxis=double(xaxis)+anytim(dateobs)
+        spg={spectrogram:image,x:xaxis,y:yaxis}
+        IF keyword_set(ragflux) THEN $
+          spg.spectrogram=10d^(spg.spectrogram/45d)-10d
+
+        ptr=ptr_new(spg)
+
+        print,startfile
+        print,endfile
+        
+        REPEAT BEGIN
+            nowtime=nowtime+15*60
+            nowfile=ph_get_filename(nowtime)
+            IF nowfile NE '' THEN BEGIN
+                ragfitsread,nowfile,image,xaxis,yaxis,dateobs=dateobs
+                xaxis=double(xaxis)+anytim(dateobs)
+                spg={spectrogram:image,x:xaxis,y:yaxis}
+
+                IF keyword_set(ragflux) THEN $
+                  spg.spectrogram=10d^(spg.spectrogram/45d)-10d
+
+
+                ptr=[ptr,ptr_new(spg)]
+                ;spg=merge_spg(spg,spg2)
+                ;IF (size(spg))[0] EQ 0 THEN BEGIN
+                ;    print,'failed to merge spectrograms' 
+                ;    RETURN,-1
+                ;ENDIF
+            ENDIF
+        ENDREP $
+        UNTIL  nowfile EQ endfile                   
+        ;stop
+    ENDELSE
+ENDIF $
+ELSE BEGIN
+    ragfitsread,filename,image,xaxis,yaxis
+    spg={spectrogram:image,x:xaxis,y:yaxis}
+
+    IF keyword_set(ragflux) THEN $
+      spg.spectrogram=10d^(spg.spectrogram/45d)-10d
+
+    ptr=ptr_new(spg)
+
+ENDELSE
+
+
+RETURN,ptr
+
+END
+

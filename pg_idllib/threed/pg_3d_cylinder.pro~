@@ -1,0 +1,157 @@
+;+
+; NAME:
+;
+; pg_3d_cylinder
+;
+; PURPOSE:
+;
+; construct a cylindrical surface
+;
+; CATEGORY:
+;
+; 3d utils
+;
+; CALLING SEQUENCE:
+;
+; pg_3d_cylinder,x,xnorm=xnorm,ncirc=ncirc,xx=xx,yy=yy,zz=zz
+;
+; INPUTS:
+;
+; x: an array of nx3 elemnts with the x,y,z coordinates of the points describing
+; the center of the (possibly curved) cylinder
+;
+; OPTIONAL INPUTS:
+; 
+; xnorm: a vector specifying a vector defining the main axis of the elliptical
+; slice for the first point
+;
+; ncirc: number of points in each cicular slice (default: 32)
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+; XX,YY,ZZ: array with the coordinates of the surface vertices
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; MODIFICATION HISTORY:
+;
+; 05-DEC-2006 written Paolo Grigis 
+; (pgrigis@astro.phys.ethz.ch)
+;
+;-
+
+;.comp pg_3d_cylinder
+
+PRO pg_3d_cylinder_test
+
+n=100
+t=findgen(n)/(n-1)*4*!Pi
+
+x=sin(t)
+y=cos(t)
+z=t/4;exp(-0.5*t^2)
+
+pg_3d_cylinder,[[x],[y],[z]],xx=xx,yy=yy,zz=zz,r1=0.1,r2=0.02
+
+;mysurf = OBJ_NEW('IDLgrSurface',zz,xx,yy)
+;mysurf->setproperty,color=[255B,0,0],style=1,shading=1,hidden_lines=1;,gouraud=1
+;xobjview,mysurf;,/isotropic
+
+isurface,zz,xx,yy,/isotropic,shading=1,style=2,/hidden_lines
+
+END
+
+
+PRO pg_3d_cylinder,xinput,xnorm=xnorm,ncirc=ncirc,xx=xx,yy=yy,zz=zz,r1=r1,r2=r2
+
+s=size(xinput)
+
+IF total(s) EQ 0 THEN BEGIN 
+   print,'Please input a nx3 array'
+   return
+ENDIF
+
+x=xinput[*,0]
+y=xinput[*,1]
+z=xinput[*,2]
+
+ncirc=fcheck(ncirc,32)
+tcirc=findgen(ncirc)/(ncirc-1)*2*!Pi
+
+
+xx=fltarr(s[1],ncirc)
+yy=fltarr(s[1],ncirc)
+zz=fltarr(s[1],ncirc)
+
+
+IF NOT exist(xnorm) THEN BEGIN 
+   
+   xnorm=[1.,2,3]
+   
+ENDIF
+
+r1=fcheck(r1,0.1)
+r2=fcheck(r2,0.1)
+
+xnorm=xnorm/sqrt(total(xnorm))
+
+FOR i=0,s[1]-1 DO BEGIN 
+   ;find projection of xnorm in plane perpendicular
+   ;to v, where v is the unit vector pointing from x[i] to x[i+1]
+
+
+   IF i NE s[1]-1 THEN v=[x[i+1]-x[i],y[i+1]-y[i],z[i+1]-z[i]]
+   v=v/sqrt(total(v*v))
+
+   IF array_equal(v,xnorm) THEN BEGIN 
+      xnorm[0]=xnorm[0]+0.1
+   ENDIF
+   
+   sprod=total(v*xnorm)
+
+   bas1=xnorm-sprod*v
+   bas1=bas1/sqrt(total(bas1^2))
+   
+   bas2=bas1
+   bas2[0]=bas1[1]*v[2]-bas1[2]*v[1]
+   bas2[1]=bas1[2]*v[0]-bas1[0]*v[2]
+   bas2[2]=bas1[0]*v[1]-bas1[1]*v[0]
+   
+   xx[i,*]=x[i]+r1*bas1[0]*cos(tcirc)+r2*bas2[0]*sin(tcirc)
+   yy[i,*]=y[i]+r1*bas1[1]*cos(tcirc)+r2*bas2[1]*sin(tcirc)
+   zz[i,*]=z[i]+r1*bas1[2]*cos(tcirc)+r2*bas2[2]*sin(tcirc)
+
+   xnorm=bas1
+   
+ENDFOR
+
+
+
+END
+

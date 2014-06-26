@@ -1,0 +1,533 @@
+;+
+; NAME:
+;
+; pg_wid_fitsp
+;
+; PURPOSE:
+;
+; widget util for fitting spectra
+;
+; CATEGORY:
+;
+; rhessi spectrograms/fitting util
+;
+; CALLING SEQUENCE:
+;
+; 
+;
+; INPUTS:
+;
+; 
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+; 
+;
+; OUTPUTS:
+;
+; 
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; AUTHOR:
+; Paolo Grigis, Institute for Astronomy, ETH Zurich
+; pgrigis@astro.phys.ethz.ch 
+;
+; MODIFICATION HISTORY:
+;
+; 27-NOV-2006 pg written
+;-
+
+;.comp pg_wid_fitsp
+
+
+
+
+PRO pg_wid_fitsp_test
+
+fixed=bytarr(3,6)+1B
+fixed[0,[3,4]]=0B
+fixed[1,[0,1,2,5]]=0B
+fixed[2,[0,1,2,3,4,5]]=0B
+
+
+useprevious=bytarr(3,6)
+useprevious[1,[3,4]]=1B
+useprevious[2,[0,1,2,3,4,5]]=1B
+
+
+startvalues=dblarr(3,6)
+startvalues[0,*]=[-0.1d,-2.,0,1.,1.,1.]
+startvalues[1,*]=[-0.1d,-2.,1,1.,1.,1.]
+startvalues[2,*]=[-0.1d,-2.,1,1.,1.,1.]
+
+parnames=['A_PAR','B_PAR','EXPC_PAR', $
+          'EM','TEMP','LAMBDA_BACK']
+
+
+limited=bytarr(2,9)+1B
+limits=dblarr(2,9)
+
+limited[*,0]=[1,1]
+limits[*,0]=[-5,0]
+limited[*,1]=[1,1]
+limits[*,1]=[-20,-1]
+limited[*,2]=[1,1]
+limits[*,2]=[0.,1d10]
+limited[*,3]=[1,1]
+limits[*,3]=[0.,1d4]
+limited[*,4]=[1,1]
+limits[*,4]=[0.1,1000]
+limited[*,5]=[1,1]
+limits[*,5]=[0.5,2.]
+
+
+partmodels=[ptr_new([2,5]),ptr_new([3,4,5])]
+partmodelvalues=[ptr_new([0.,1]),ptr_new([0.,1,1.])]
+
+flexst={ $
+         modelfunction:'pg_parabmod', $
+         npar:n_elements(parnames), $
+         parnames:parnames, $
+         enorm: 50., $
+         nfitrounds:3, $
+         fitrange:[[12.,25],[40,70],[12,500]], $
+         fixed:fixed, $
+         useprevious:useprevious, $
+         startvalues:startvalues, $
+         limits:limits, $
+         limited:limited, $
+         partmodels:partmodels, $
+         partmodelvalues:partmodelvalues, $
+         partcol:[2,7] $
+       }
+
+  spdir='~/work/shh_data/spsrmfiles/shhcandlist/'
+
+  sp='sp_20050117_0835_pileup08.fits'
+  srm='srm_20050117_0835_pileup08.fits'
+
+  spgin=pg_spfitfile2spg(spdir+sp,/new,/edges,/filter,/error) ;units: counts s^(-1)
+  spg=pg_spg_uniformrates(spgin,/convert_edges) ;units: count s^-1 keV^-1
+  drm=pg_readsrmfitsfile(spdir+srm)
+
+  result=file_search('~/work/shh_data/fitresults/*parab*.sav')
+  result=file_search('~/work/shh_data/fitresults/*pow*.sav')
+
+  k=8
+  restore,result[k]
+  fr=fitres[2]
+
+
+  bspectrum=fr.bspectrum
+  bespectrum=fr.bespectrum
+
+  ;parinfo=*fr.parinfo[2]
+
+  fitinterval=1009
+  timefit=spg.x[fitinterval]
+  dummy=min(abs(fr.time-timefit),minindex)
+  
+  spectrum=spg.spectrogram[fitinterval,*]
+  ;spectrum2=fr.cntspectra[*,minindex]
+  espectrum=spg.espectrogram[fitinterval,*]
+
+  ;setup correct dealing with atten states
+  allfilters=drm.filter_state
+  attindex=bytarr(4)-1
+  FOR i=0,n_elements(allfilters)-1 DO attindex[allfilters[i]]=i
+
+  attstate=spg.filter_state[fitinterval]
+  attuncert=spg.filter_uncert[fitinterval]
+
+  thisattstateind=attindex[attstate]
+
+  matrix=drm.matrix[*,*,thisattstateind]
+
+  parinfo=*(fr.parinfo[minindex])
+  parinfo.value=fr.fitpar[*,minindex]
+;  parplot=[[2,1],[2,0],[3,4]]
+;  parrange=[[1d-4,1d2,0,-8],[1d-4,1d2,1,-3],[1d-5,1d5,0.,10]]
+;  parlog=[[1,0],[1,0],[1,0]]
+;  parplotst={parplot:parplot,parrange:parrange,parlog:parlog}
+flexst.partmodels=[ptr_new([2,5]),ptr_new([3,5])]
+flexst.partmodelvalues=[ptr_new([0.,0.]),ptr_new([0.,0.])]
+
+pg_wid_fitsp,spectrum=spectrum,espectrum=espectrum,matrix=matrix $
+            ,bspectrum=bspectrum,bespectrum=bespectrum,flexst=flexst $
+            ,parinfo=parinfo,cntedges=drm.cntedges,photedges=drm.photedges $
+            ,geom_area=drm.geom_area[thisattstateind]
+
+;.comp pg_wid_fitsp
+
+
+;pg_fitres_browser,fr,parplot
+
+END
+
+
+PRO pg_wid_fitsp_plot,mydata
+
+  flexst=mydata.flexst
+;  drm=mydata.drm
+;  intv=mydata.fitinterval
+
+  modelname=flexst.modelfunction
+
+  ;setup correct dealing with atten states
+  ;allfilters=drm.filter_state
+  ;attindex=bytarr(4)-1
+  ;FOR i=0,n_elements(allfilters)-1 DO attindex[allfilters[i]]=i
+  
+  ;attenuator state
+;  attstate=mydata.spg.filter_state[intv]
+;  attuncert=mydata.spg.filter_uncert[intv]
+
+  ;att state index
+;  thisattstateind=attindex[attstate]
+
+
+  cntedges=mydata.cntedges
+  photedges=mydata.photedges
+  spectrum=mydata.spectrum
+  espectrum=mydata.espectrum
+  bspectrum=mydata.bspectrum
+  bespectrum=mydata.bespectrum
+
+  fitpar=mydata.parinfo.value
+
+  resposition=[0.1,0.05,0.95,0.4]
+  spposition=[0.1,0.45,0.95,0.975]
+
+  resulttot=call_function(flexst.modelfunction,dummy,fitpar,photedges=photedges $
+                          ,drm=mydata.matrix $
+                          ,geom_area=mydata.geom_area,enorm=flexst.enorm $
+                          ,background=bspectrum)
+
+  ;stop
+
+  pg_plotsp,cntedges,spectrum,espectrum=espectrum,/xlog,/ylog,xstyle=1 $
+           ,yrange=[0.1,1d4],position=spposition,xtickname=replicate(' ',30) $
+           ,xrange=[3,500]
+  pg_plotsp,cntedges,resulttot,color=12,/overplot
+  pg_plotsp,cntedges,bspectrum,color=5,/overplot
+
+  
+  FOR ipart=0,n_elements(mydata.flexst.partmodels)-1 DO BEGIN 
+
+     tpar=fitpar
+     tpar[*flexst.partmodels[ipart]]=*flexst.partmodelvalues[ipart]
+     thisresult=call_function(flexst.modelfunction,dummy,tpar,photedges=photedges $
+                          ,drm=mydata.matrix $
+                          ,geom_area=mydata.geom_area,enorm=flexst.enorm $
+                          ,background=bspectrum)
+
+
+
+     pg_plotsp,cntedges,thisresult,color=flexst.partcol[ipart],/overplot 
+
+
+  ENDFOR
+
+  ;plot residuals
+
+  pg_plotspres,cntedges,spectrum=spectrum,modspectrum=resulttot,espectrum=espectrum $
+              ,xrange=[3,500],/xlog,/xstyle,yrange=[-4,4],/noerase,position=resposition
+
+
+
+end
+
+FUNCTION pg_wid_fitsp_dofit,mydata,newchi=newchi
+
+  flexst=mydata.flexst
+  modelname=flexst.modelfunction
+
+  cntedges=mydata.cntedges
+  photedges=mydata.photedges
+  spectrum=mydata.spectrum
+  espectrum=mydata.espectrum
+  bspectrum=mydata.bspectrum
+  bespectrum=mydata.bespectrum
+
+  fitpar=mydata.parinfo.value
+
+  ;get cntrange
+  max=flexst.nfitrounds-1
+  fitrange=flexst.fitrange[*,max]
+
+  cntrange=where(cntedges[*,0] GE fitrange[0] AND cntedges[*,1] LE fitrange[1])
+
+
+  fitpar=mpfitfun(modelname,replicate(1,n_elements(cntrange)),spectrum[cntrange] $
+             ,sqrt(espectrum[cntrange]^2+bespectrum[cntrange]^2) $
+             ,functargs={photedges:photedges,drm:mydata.matrix $
+                        ,geom_area:mydata.geom_area $
+                        ,cntrange:cntrange,enorm:flexst.enorm,background:bspectrum} $
+             ,bestnorm=bn,yfit=yfit,dof=dof,status=mpfitstatus $
+             ,parinfo=mydata.parinfo);tol=1d-12)
+
+
+  newchi=bn/dof
+
+
+  print,fitpar
+
+  return,fitpar
+
+
+end
+
+
+
+PRO pg_wid_fitsp_fieldupdate,top,mydata
+
+  FOR i=0,n_elements(mydata.parinfo)-1 DO BEGIN
+     thisname='fitpar'+smallint2str(i,strlen=2)
+     thisfield=widget_info(top,find_by_uname=thisname) 
+
+     widget_control,thisfield,set_value=mydata.parinfo[i].value
+
+  ENDFOR
+
+END
+
+
+
+
+
+PRO pg_wid_fitsp_event,ev
+
+  widget_control,ev.handler,get_uvalue=mydata
+  
+  FOR i=0,n_elements(mydata.parinfo)-1 DO BEGIN
+     thisname='fitpar'+smallint2str(i,strlen=2)
+     IF ev.id EQ  widget_info(ev.top,find_by_uname=thisname) THEN BEGIN 
+        ;print,'PAR '+smallint2str(i,strlen=2)+'has done something'
+        ;get values
+        mydata.parinfo[i].value=ev.value        
+        widget_control,ev.handler,set_uvalue=mydata
+
+        drawsp=widget_info(ev.top,find_by_uname='pg_wid_sp_drawsp')
+        widget_control,drawsp,get_value=plotwin
+        wset,plotwin
+                
+        pg_wid_fitsp_plot,mydata
+
+     return
+     ENDIF
+  ENDFOR
+
+
+  CASE ev.ID OF    
+
+     widget_info(ev.top,find_by_uname='pg_wid_sp_commands') : BEGIN
+
+ 
+        CASE ev.value OF
+
+            0 : BEGIN ;plot fit
+
+                  
+               drawwidget=widget_info(ev.top,find_by_uname='pg_wid_sp_drawsp')
+               widget_control,drawwidget,get_value=plotwin
+               wset,plotwin
+                
+               pg_wid_fitsp_plot,mydata
+
+      
+            END
+
+            1 : BEGIN ;Do fit
+
+
+               newfitpar=pg_wid_fitsp_dofit(mydata,newchi=newchi)
+
+               mydata.chisq=newchi
+               mydata.parinfo.value=newfitpar
+                   
+               drawwidget=widget_info(ev.top,find_by_uname='pg_wid_sp_drawsp')
+               widget_control,drawwidget,get_value=plotwin
+               wset,plotwin
+                
+               pg_wid_fitsp_plot,mydata
+
+               widget_control,ev.handler,set_uvalue=mydata
+          
+               pg_wid_fitsp_fieldupdate,ev.top,mydata
+    
+            END
+
+            2 : BEGIN          ; 'reset values'
+
+               ;print,'reset values'
+
+               widget_control,ev.handler,get_uvalue=mydata
+               mydata.parinfo=mydata.inputparinfo
+               mydata.chisq=mydata.inputchisq
+               
+               widget_control,ev.handler,set_uvalue=mydata
+  
+               pg_wid_fitsp_fieldupdate,ev.top,mydata
+             
+               drawwidget=widget_info(ev.top,find_by_uname='pg_wid_sp_drawsp')
+               widget_control,drawwidget,get_value=plotwin
+               wset,plotwin
+               
+               pg_wid_fitsp_plot,mydata
+
+            
+            END
+
+            3 : BEGIN          ; 'keep and done'
+
+                widget_control,ev.top,/destroy
+            
+            END
+
+            4 : BEGIN          ; 'Done'
+
+                widget_control,ev.top,/destroy
+            
+            END
+
+            ELSE : RETURN
+
+        ENDCASE
+
+     END
+
+
+     ELSE :  print,'Event happened'
+
+
+  ENDCASE
+
+
+
+END
+
+PRO pg_wid_fitsp,spectrum=spectrum,espectrum=espectrum $
+                ,matrix=matrix,cntedges=cntedges,photedges=photedges $
+                ,bspectrum=bspectrum,bespectrum=bespectrum $
+                ,parinfo=parinfo,flexst=flexst,geom_area=geom_area $
+                ,root=root,thistop=thistop,thisintv=thisintv,chisq=chisq
+
+chisq=fcheck(chisq,-1.)
+thistop=fcheck(thistop,-1)
+thisintv=fcheck(thisintv,-1)
+               
+
+mydata={spectrum:spectrum $
+         ,espectrum:espectrum $
+         ,matrix:matrix $
+         ,cntedges:cntedges $
+         ,photedges:photedges $
+         ,geom_area:geom_area $
+         ,parinfo:parinfo $
+         ,chisq:chisq $
+         ,inputchisq:chisq $
+         ,inputparinfo:parinfo $
+         ,flexst:flexst $
+         ,bspectrum:bspectrum $
+         ,bespectrum:bespectrum $
+         ,thistop:thistop $
+         ,thisintv:thisintv}
+
+npar=n_elements(parinfo)
+
+
+base=widget_base(title='Interactive spectral fitter',/row,uname='pg_wid_sp_base')
+root=widget_base(base,/row,uvalue=spgstr,uname='pg_wid_sp_root')
+    
+menu1=widget_base(root,group_leader=root,/column,uname='pg_wid_sp_menu1')
+menu2=widget_base(menu1,group_leader=menu1,/row,uname='pg_wid_sp_menu2')
+drawsurf1=widget_base(root,group_leader=root,/column,uname='pg_wid_sp_drawsurf1')
+buttonm1=widget_base(menu2,group_leader=menu2,/row)
+buttonm2=widget_base(menu2,group_leader=menu2,/column)
+    
+
+;end widget hierarchy creation
+
+;buttons
+;
+    values=['Plot','Do Fit','reset values','keep and done','Done']
+
+    uname='pg_wid_sp_commands'
+    bgroup=cw_bgroup(buttonm1,values,/column,uname=uname)
+
+;    values=['UNUSED']
+
+
+FOR i=0,npar-1 DO BEGIN     
+   
+   testfield1 = cw_field(buttonm2,value=parinfo[i].value,xsize=16 $
+                         ,title=parinfo[i].parname,/return_events,/column $
+                         ,uname='fitpar'+smallint2str(i,strlen=2))
+
+ENDFOR
+
+
+
+
+drawbase=widget_base(drawsurf1,group_leader=drawsurf1,/row)
+ 
+drawsp=widget_draw(drawbase,xsize=800,ysize=800,uname='pg_wid_sp_drawsp')
+
+                 
+;end draw widget
+
+widget_control,root,set_uvalue=mydata
+  
+widget_control,base,/realize
+ 
+;drawwidget=widget_info(ev.top,find_by_uname='pg_wid_sp_drawsp')
+widget_control,drawsp,get_value=plotwin
+wset,plotwin
+                
+pg_wid_fitsp_plot,mydata
+
+;linecolors
+;pg_fitres_browser_doallplots,base,mydata
+;widget_control,root,set_uvalue=mydata
+
+IF thistop NE -1 THEN BEGIN 
+   xmanager,'pg_wid_fitsp',root,/no_block,cleanup='pg_flexres_browser_fitcleanup'
+ENDIF $ 
+ELSE BEGIN 
+   xmanager,'pg_wid_fitsp',root,/no_block
+ENDELSE
+
+
+
+;widget_control,root,get_uvalue=mynewdata
+;stop
+;print,[1,2,1]
+
+END

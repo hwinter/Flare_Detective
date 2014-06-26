@@ -1,0 +1,105 @@
+;+
+; NAME:
+;       MAG2GEO
+;
+; PURPOSE:
+;       Converts from GEOMAGNETIC (latitude,longitude) to GEOGRAPHIC (latitude,longitude).
+;	(altitude remains the same)
+;
+; CALLING SEQUENCE:
+;       gcoord=mag2geo(mcoord)
+;
+; INPUT:
+;	mcoord = a 2-element array of magnetic [latitude,longitude], or an array [2,n] of n such coordinates.
+;
+; KEYWORD INPUTS:
+;		None
+;
+; OUTPUT:
+;	a 2-element array of geographic [latitude,longitude], or an array [2,n] of n such coordinates			
+;
+; COMMON BLOCKS:
+;		None
+;
+; RESTRICTIONS:
+;       None
+;
+; EXAMPLES:
+;	IDL> gcoord=mag2geo([90,0])		; coordinates of magnetic south pole
+;	IDL> print,gcoord
+;	79.300000      -71.409990
+;
+; MODIFICATION HISTORY:
+;		Written by Pascal Saint-Hilaire (Saint-Hilaire@astro.phys.ethz.ch) on 2002/04/23
+;		
+;-
+
+;====================================================================================
+FUNCTION mag2geo_singlepoint,incoord
+
+	; SOME 'constants'...
+	R = 1D
+	Dlong=288.59D	; longitude (in degrees) of Earth's magnetic south pole (which is near the geographic north pole!) (1995)
+	Dlat=79.30D 	; latitude (in degrees) of same (1995)
+
+	; convert first to radians
+	Dlong=Dlong*!PI/180.
+	Dlat=Dlat*!PI/180.
+
+	mlat=DOUBLE(incoord(0))*!PI/180.
+	mlon=DOUBLE(incoord(1))*!PI/180.
+	malt=R
+	
+	coord=[mlat,mlon,malt]
+
+	;convert to rectangular coordinates
+	;	X-axis: defined by the vector going from Earth's center towards
+	;			the intersection of the equator and Greenwitch's meridien.
+	;	Z-axis: axis of the geographic poles
+	;	Y-axis: defined by Y=Z^X
+	x=coord(2)*cos(coord(0))*cos(coord(1))
+	y=coord(2)*cos(coord(0))*sin(coord(1))
+	z=coord(2)*sin(coord(0))
+
+	;First rotation : in the plane of the current meridian from magnetic pole 
+	;to geographic pole.
+	togeolat=dblarr(3,3)
+	togeolat(0,0)=cos(!PI/2-Dlat)
+	togeolat(0,2)=sin(!PI/2-Dlat)
+	togeolat(2,0)=-sin(!PI/2-Dlat)
+	togeolat(2,2)=cos(!PI/2-Dlat)
+	togeolat(1,1)=1.
+	out= togeolat # [x,y,z]
+
+	;Second rotation matrix : rotation around plane of the equator,
+	;from the meridien containing the magnetic poles to the Greenwitch meridien.
+	maglong2geolong=dblarr(3,3)
+	maglong2geolong(0,0)=cos(Dlong)
+	maglong2geolong(0,1)=-sin(Dlong)
+	maglong2geolong(1,0)=sin(Dlong)
+	maglong2geolong(1,1)=cos(Dlong)
+	maglong2geolong(2,2)=1.
+	out=maglong2geolong # out
+
+	;convert back to latitude, longitude and altitude
+	glat=atan(out(2),sqrt(out(0)^2+out(1)^2))
+	glat=glat*180./!PI
+	glon=atan(out(1),out(0))
+	glon=glon*180./!PI
+	;galt=sqrt(out(0)^2+out(1)^2+out(2)^2)-R  ; I don't care about that one...
+
+	RETURN,[glat,glon]
+END
+;====================================================================================
+FUNCTION mag2geo,mcoord
+	S=Size(mcoord)
+	IF S[1] NE 2 THEN RETURN,-1
+	
+	IF S[0] EQ 1 THEN gcoord=mag2geo_singlepoint(mcoord) ELSE BEGIN
+		gcoord=DBLARR(2,S[2])	
+		FOR i=0L,S[2]-1 DO gcoord(*,i)=mag2geo_singlepoint(mcoord(*,i))
+	ENDELSE
+
+	RETURN,gcoord
+END
+;====================================================================================

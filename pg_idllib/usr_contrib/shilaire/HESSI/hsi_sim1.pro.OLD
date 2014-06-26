@@ -1,0 +1,198 @@
+
+recompute=1
+smoothe=3
+ffit=0
+fit=0
+plotextrema=1
+
+pixsiz=1.
+imgdim=256
+timeintv=4.
+
+;;remove_path,'atest'
+;;simo = hsi_image() 
+
+timebins=FLOAT([1,1,2,4,8,8,16,32,64])/1000.
+charsize=1.2
+res=[2.3,3.9,6.9,11.9,20.7,35.9,62.1,107.,186.]
+harmonic=0
+gg = {gaussian_source_str} 
+gg.xypos = [0.,0.] 
+gg.tilt_angle_deg = 0. 
+gg.amplitude = 1.0 
+;==========================================================
+gg.xysigma = 15.*[1.,1.] 
+;==========================================================
+
+;;;;;;;;;;;;;;;;;;;;
+IF recompute NE 0 THEN BEGIN
+	simo ->set, sim_model=gg,sim_photons_per_coll=50000,  	$
+		sim_pixel_size=pixsiz, pixel_size=pixsiz, 		$
+		energy_band=[12.,25.] ,	time_range=[0.,timeintv],	$
+		sim_image_dim=imgdim, image_dim=imgdim
+	
+	IF ffit NE 0 THEN simo->set,image_alg='forwardfit' ELSE simo->set,image_alg='back'
+	IF ffit NE 0 THEN ffstuff=REPLICATE({width:-9999.,peakflux:-9999.,photonsec:-9999.},9) ELSE ffstuff=-1
+	IF fit NE 0 THEN fitstuff=REPLICATE({A0:-9999.,A1:-9999.,a:-9999.,b:-9999.,x:-9999.,y:-9999.,tilt:-9999.},9) ELSE fitstuff=-1
+	
+	hedc_win,900,nb=3
+	hessi_ct
+	!P.MULTI=[0,3,3]
+	
+	FOR coll=0,8 DO BEGIN
+		det_index=BYTARR(9)
+		det_index(coll)=1
+		pixsiz=res[coll]/50. * [1.,1.]
+		simo->set,det_index=det_index,pixel_size=pixsiz
+		simo->set_no_screen_output
+		im=simo->getdata()
+		simo->plot,charsize=1.2*charsize,top=240,/LIMB
+		IF ffit NE 0 THEN BEGIN
+			tmp=simo->get(/info)
+			ffstuff(coll).width=tmp.FF_COEFF_FF(1)
+			ffstuff(coll).peakflux=tmp.FF_PEAK_FLUX
+			ffstuff(coll).photonsec=tmp.FF_PHOT_SEC
+		ENDIF
+		IF fit NE 0 THEN BEGIN
+			info=simo->get()
+			tmp=gauss2dfit(im,a,/TILT)
+			fitstuff[coll].A0=a[0]		; offset constant
+			fitstuff[coll].A1=a[1]		; scaling (proportional to photon flux)
+			fitstuff[coll].a=a[2]*info.pixel_size[0]	; "semi-major"
+			fitstuff[coll].b=a[3]*info.pixel_size[1]	; "semi-minor"
+			fitstuff[coll].x=(a[4]-info.image_dim[0]/2)*info.pixel_size[0] + info.xyoffset[0]
+			fitstuff[coll].y=(a[5]-info.image_dim[1]/2)*info.pixel_size[1] + info.xyoffset[1]
+			fitstuff[coll].tilt=a[6]	; radians, counterclockwise from x-axis
+			fitmap=make_map(tmp,XC=info.xyoffset[0],YC=info.xyoffset[1],DX=info.pixel_size[0],DY=info.pixel_size[1])
+			plot_map,/OVER,fitmap,lcolor=252,cthick=2,/percent,levels=[25,50,75]
+		ENDIF
+	ENDFOR		
+	!P.MULTI=0
+	be= simo -> getdata(class_name='hsi_binned_eventlist')
+ENDIF
+;;;;;;;;;;;;;;;;;;;;
+
+;==========================================================
+;first, make a lc plot of all detectors (only first harmonic):
+hedc_win,900,nb=1
+myct3,ct=1
+!P.MULTI=[0,1,9]
+
+Fmax=FLTARR(9)
+Fmin=FLTARR(9)
+Fmean=FLTARR(9)
+Fstddev=FLTARR(9)
+
+FOR coll=0,8 DO BEGIN
+	times=(*be[coll,harmonic]).time /(2.^20.)
+	counts=(*be[coll,harmonic]).count
+	IF smoothe NE 0 THEN counts=SMOOTH((*be[coll,harmonic]).count,smoothe,/EDGE)
+
+	PLOT, times, counts,charsize=1.3*charsize,ymar=[1,1],ytit='counts per time bins'
+	
+	;Fmax[coll]=MAX(counts)
+	tmp_extrema=find_local_maxima_1d(counts,ss=ss_tmp)
+	tmp_mean=MEAN(tmp_extrema)
+	tmp_sigma=STDDEV(tmp_extrema)
+	ss_tmp2=WHERE(tmp_extrema GT (tmp_mean+0.5*tmp_sigma))
+	IF ss_tmp2(0) EQ -1 THEN ss_tmp2=WHERE(tmp_extrema GT tmp_mean)
+	extrema=tmp_extrema[ss_tmp2]
+	ss=ss_tmp[ss_tmp2]
+	Fmax[coll]=MEAN(extrema)	
+	
+	IF plotextrema NE 0 THEN OPLOT,times(ss),extrema,psym=-7,color=252
+	themax=FLOAT(Fmax(coll))	
+	XYOUTS,/DATA,3.5,0.8*themax,'Max: '+strn(themax),charsize=charsize,color=250
+
+
+	;Fmin[coll]=MIN(counts)
+	tmp_extrema=find_local_minima_1d(counts,ss=ss_tmp)
+	tmp_mean=MEAN(tmp_extrema)
+	tmp_sigma=STDDEV(tmp_extrema)	
+	ss_tmp2=WHERE(tmp_extrema LT (tmp_mean-0.5*tmp_sigma))
+	IF ss_tmp2(0) EQ -1 THEN ss_tmp2=WHERE(tmp_extrema LT tmp_mean)
+	extrema=tmp_extrema[ss_tmp2]
+	ss=ss_tmp[ss_tmp2]
+	Fmin[coll]=MEAN(extrema)	
+
+	IF plotextrema NE 0 THEN OPLOT,times(ss),extrema,psym=-7,color=253
+	XYOUTS,/DATA,3.5,0.6*themax,'Min: '+strn(Fmin[coll]),charsize=charsize,color=250
+
+	Fmean[coll]=MEAN(counts)
+	XYOUTS,/DATA,3.5,0.4*themax,'Mean: '+strn(Fmean[coll]),charsize=charsize,color=250
+
+	Fstddev[coll]=STDDEV(counts)
+	XYOUTS,/DATA,3.5,0.2*themax,'StdDev: '+strn(Fstddev[coll]),charsize=charsize,color=250
+ENDFOR
+!P.MULTI=0
+;==========================================================
+;normalize Fluxes:
+Fmax=Fmax/timebins
+Fmin=Fmin/timebins
+;==========================================================
+;now, make FFT of all detectors (only first harmonic):
+hedc_win,900,nb=6
+!P.MULTI=[0,1,9]
+
+FOR coll=0,8 DO BEGIN
+	times=(*be[coll,harmonic]).time /(2.^20.)
+	counts=(*be[coll,harmonic]).count
+	
+	npts=N_ELEMENTS(counts)	
+	freq=FINDGEN(npts)/timeintv
+	PLOT,freq,abs(FFT(counts-MEAN(counts))),charsize=1.3*charsize,ymar=[1,1],ytit='FFT'
+ENDFOR
+!P.MULTI=0
+;==========================================================
+
+;===========================================================================================================
+; now, make other misc. plots:
+hedc_win,900,nb=2
+!P.MULTI=[0,1,9]
+ymar=[1,1]
+ytit='Fmax'	
+	PLOT,res,Fmax,charsize=1.5*charsize,ymar=ymar,xtit='res',ytit=ytit
+	PLOT,1/res,Fmax,charsize=1.5*charsize,ymar=ymar,xtit='1/res',ytit=ytit,/ylog,psym=-7
+	PLOT,res^(-2),Fmax,charsize=1.5*charsize,ymar=ymar,xtit='res!U-2!N',ytit=ytit,/ylog,psym=-7
+ytit='Fmax - Fmin'	
+	PLOT,res,Fmax-Fmin,charsize=1.5*charsize,ymar=ymar,xtit='res',ytit=ytit
+	PLOT,1/res,Fmax-Fmin,charsize=1.5*charsize,ymar=ymar,xtit='1/res',ytit=ytit,/ylog,psym=-7
+	PLOT,res^(-2),Fmax-Fmin,charsize=1.5*charsize,ymar=ymar,xtit='res!U-2!N',ytit=ytit,/ylog,psym=-7
+ytit='(Fmax-Fmin)/Fmax'	
+	PLOT,res,(Fmax-Fmin)/Fmax,charsize=1.5*charsize,ymar=ymar,xtit='res',ytit=ytit
+	PLOT,1/res,(Fmax-Fmin)/Fmax,charsize=1.5*charsize,ymar=ymar,xtit='1/res',ytit=ytit,psym=-7
+	PLOT,res^(-2),(Fmax-Fmin)/Fmax,charsize=1.5*charsize,ymar=ymar,xtit='res!U-2!N',ytit=ytit,psym=-7
+!P.MULTI=0
+
+
+;;==========================================================
+;;==========================================================
+;;==========================================================
+;;NOW, plots with forward fit fluxes:
+;IF ffit NE 0 THEN BEGIN
+;hedc_win,900,nb=4
+;!P.MULTI=[0,1,6]
+;ymar=[1,1]
+;ytit='ff: width'	
+;	PLOT,1/res,ffstuff.width,charsize=1.5*charsize,ymar=ymar,xtit='1/res',ytit=ytit
+;	PLOT,res^(-2),ffstuff.width,charsize=1.5*charsize,ymar=ymar,xtit='res!U-2!N',ytit=ytit
+;ytit='ff: peak flux (ph/s/cm2/asec2)'	
+;	PLOT,1/res,ffstuff.peakflux,charsize=1.5*charsize,ymar=ymar,xtit='1/res',ytit=ytit
+;	PLOT,res^(-2),ffstuff.peakflux,charsize=1.5*charsize,ymar=ymar,xtit='res!U-2!N',ytit=ytit
+;ytit='ff: photon flux (ph/s)'	
+;	PLOT,1/res,ffstuff.photonsec,charsize=1.5*charsize,ymar=ymar,xtit='1/res',ytit=ytit
+;	PLOT,res^(-2),ffstuff.photonsec,charsize=1.5*charsize,ymar=ymar,xtit='res!U-2!N',ytit=ytit
+;ENDIF
+;;==========================================================
+;;NOW, fitfluxes:
+IF fit NE 0 THEN BEGIN
+	hedc_win,nb=5
+	!P.MULTI=0
+	PLOT,1/res^2,fitstuff.A1,psym=-7,/YLOG
+ENDIF
+END
+;;==========================================================
+;;==========================================================
+;;==========================================================
+;;==========================================================
+

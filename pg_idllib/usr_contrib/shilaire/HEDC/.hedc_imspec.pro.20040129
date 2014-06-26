@@ -1,0 +1,425 @@
+; V6.
+; PURPOSE:
+;	Finds automatically STRONG sources and makes imaging spectroscopy of them.
+;	Will try to find sources in the lowest energy band, as well as in a high energy band
+;	Assumes that there are actually sources! Also, only takes into account sources within 0.5 of map's Z maximum.
+;	Actually, jchooser should never be <0...
+;	Will display all images in a time-energy panel, with an additional panel at the bottom of each column with spectra.
+;	Color of spectra correspond to color of source contour in same column...
+;
+; INPUTS:
+;	sourceimg OR ichooser,jchooser
+;		sourceimg; image (2-d array) or imagecube (in time) with as many time intv as in the fitsfile.
+;		ichooser: index (in time) of image to take for source finding. If <0, will pick the current time intv.
+;		jchooser: index (in energy) of image to take for source finding. Can be an array, if different energies are to be used to find sources.
+;			In this case either a 1-D array, or a 2-D array (energy intervals...). 
+;			Careful for 2-d jchooser arrays: they are not normalized for their energy widths! So one should take images of same energy widths...
+;
+;
+; KEYWORDS:
+;	fitsfile: RHESSI imagecube fitfile
+;	pngfile: filename to which to output the PNG image.
+;	fitEband: eband (ex: [15,100]) within which to fit the power-law.
+;	disp: the energy bands to be displayed. (ex: 0, 4, or [0,2,4], or [[1,3],[5,6],[10,10]]). Default is jchooser.
+;		Careful for 2-d disp arrays: they are not normalized for their energy widths! So one should take images of same energy widths...
+;	SKIP: skips some time intervals, following an algorithm which might change according to my humor... (SKIP=1, 2, 3... for different methods...)
+;		
+; EXAMPLE:
+;	
+;	hedc_imspec, -1, [1,8,12],fitsfile=fil,SKIP=2
+;	set_plot,'Z' & hedc_imspec, -1, [1,8,12],fitsfile=fil, pngfile='test.png', SKIP=2 & X
+;
+;	hedc_imspec, -1, [1,4,8], fitsfile=fil
+;	hedc_imspec, -1, [[0,2],[8,9],[12,12]], fitsfile=fil, SKIP=2
+;	set_plot,'Z' & hedc_imspec, 2, 3,pngfile='Ebudget2/test.png', fitsfile=fil & x
+;	set_plot,'Z' & hedc_imspec, -1, [1,4,8], fitsfile=fil, pngfile='LOOPTOPS/20031024/imspec.png' & x
+;	set_plot,'z' & hedc_imspec, -1, [1,6,12], pngfile='test.png',fitsfile=fil,SKIP=2 & x
+;
+;
+;HISTORY:
+;	V5: added the possibility of having a 2-d array for jchooser and disp... (to addup images in energy for source finding and/or display)
+;	V6: (PSH, 2004/01/19):	added condition so that not skipping occurs below an initial number of 6 time intvs.
+;				changed condition for 'same source': xypos within sqrtmajorminoraxis, sqrtmajorminoraxis same within factor 2 (2 places)
+;				change coord. system for plotting properly the sources...
+;				added DATE information on final plot
+;				used plot_map instead of plot_image, so that I can plot the limb...
+;				now uses f_vth + curvefit to fit thermal part.
+;		///noch nicht gemacht! 2004/01/29: EM is now total for all source!
+;
+;----------------------------------------------------------------------------------------------------------------------------------------
+FUNCTION hedc_imspec_robust_linefit, x,y, yfit=yfit, sig=sig, coeff_sig=coeff_sig
+	es=0
+	CATCH,es
+	IF es NE 0 THEN BEGIN
+		CATCH,/CANCEL
+		RETURN,-1	
+	ENDIF
+	coeff=robust_linefit(x,y,yfit1,sig1,coeff_sig1)
+	yfit=yfit1
+	sig=sig1
+	coeff_sig=coeff_sig1
+	RETURN,coeff	
+END
+;----------------------------------------------------------------------------------------------------------------------------------------
+FUNCTION hedc_imspec_th_brem, Eph, params
+	; uses brem_49.pro
+	;params[0] is EM in 1e49 cm^-3 units, params[1] is T in keV
+	;Eph is photon energy in keV
+	;output is [ph/s/cm^2/keV]
+	
+	RETURN, params[0]*brem_49(Eph,params[1])
+END
+;----------------------------------------------------------------------------------------------------------------------------------------
+FUNCTION hedc_imspec_extract_sources, img, VERBOSE=VERBOSE, min_sigma=min_sigma
+
+	IF KEYWORD_SET(min_sigma) THEN BEGIN
+		; check if the map is really only noise...if it is the case, return -1
+		;to do this, I'll simply try to find a value higher than min_sigma*sigmas above mean...
+		IF MAX(img) LT (MEAN(img)+min_sigma*STDDEV(img)) THEN RETURN,-1
+	ENDIF
+
+	n_sources_max=6
+	
+	imgdim=N_ELEMENTS(img[*,0])	
+	src=REPLICATE({gra:-1d,grb:-1d,tet:0d,max:-1d,xmax:0d,ymax:0d},n_sources_max)
+	extract_sources, img, src, NBMAX=n_sources_max,fmax=0.5
+	ss=WHERE(src.gra GE 0)
+	IF ss[0] NE -1 THEN src=src[ss]	
+	src.gra=1/sqrt(src.gra)
+	src.grb=1/sqrt(src.grb)
+	IF KEYWORD_SET(VERBOSE) THEN printai,src
+	RETURN,src
+END
+;----------------------------------------------------------------------------------------------------------------------------------------
+PRO hedc_imspec, in1,in2, fitsfile=fitsfile, pngfile=pngfile, fitEband=fitEband, STATS=STATS, disp=disp, SKIP=SKIP
+
+resolve_routine,'mpfit',/EITHER,/COMPILE_FULL_FILE,/NO_RECOMPILE
+
+	ichooser=in1
+	jchooser=in2		
+	IF NOT KEYWORD_SET(fitsfile) THEN fitsfile='hsi_imagetesseract_HXS202201106.fits'
+	IF NOT KEYWORD_SET(fitEband) THEN fitEband=[15,100]	; for power-law
+	IF NOT KEYWORD_SET(disp) THEN disp=jchooser
+	
+	sjchooser=(SIZE(jchooser))[0]
+	IF sjchooser LE 1 THEN njchooser=N_ELEMENTS(jchooser) ELSE njchooser=N_ELEMENTS(jchooser[0,*])
+	sdisp=(SIZE(disp))[0]
+	IF sdisp LE 1 THEN ndisp=N_ELEMENTS(disp) ELSE ndisp=N_ELEMENTS(disp[0,*])
+
+	imgtess=mrdfits(fitsfile,0)
+	xdim=N_ELEMENTS(imgtess[*,0,0,0])
+	ydim=N_ELEMENTS(imgtess[0,*,0,0])
+	n_ebands=N_ELEMENTS(imgtess[0,0,*,0])
+	n_tintvs=N_ELEMENTS(imgtess[0,0,0,*])
+
+	infoctrl=mrdfits(fitsfile,1)
+	tintvs=infoctrl.times_arr
+	ebands=infoctrl.ebands_arr
+	edge_products,ebands,mean=ebins
+	
+	;get Obs. Summ. countrates (corrected).
+	ro=OBJ_NEW('hsi_obs_summ_rate')
+	ro->set,obs_time_interval=[tintvs[0,0],tintvs[1,N_ELEMENTS(tintvs[0,*])-1]]+[-120,120]
+	tmp=ro->getdata()
+	ostimes=ro->get(/time)
+	osrates=ro->corrected_countrate()
+	OBJ_DESTROY,ro
+
+	IF KEYWORD_SET(SKIP) THEN BEGIN
+		IF n_tintvs GT 6 THEN BEGIN	;Only start reducing nbr intvs if they are initially more than 6...
+			CASE SKIP OF
+				1: BEGIN		
+					;if bigger than 7 intervals, take 1 out of 3.... might miss peak time!!!
+					sf=3D	;skip factor
+					IF n_tintvs GE 7 THEN ss=WHERE(abs(FINDGEN(n_tintvs)/sf-FLOOR(FINDGEN(n_tintvs)/sf)) LE 0.0001)	; supposes I have less then 10000 time intervals...
+					imgtess=imgtess[*,*,*,ss]
+					tintvs=tintvs[*,ss]
+					n_tintvs=N_ELEMENTS(imgtess[0,0,0,*])
+				END
+				2: BEGIN
+					;take all intervals up to peak time (>25 keV) + 3.25 minute. Take 1 out of 3 afterwards...
+					tmp=MAX(TOTAL(osrates[2:*,*],1),os_peak_ss)
+					os_lim_ss=os_peak_ss[0]+50 < (N_ELEMENTS(ostimes)-1)
+					ss1=WHERE(tintvs[1,*] LE ostimes[os_lim_ss])
+	
+					ss=WHERE(tintvs[0,*] GT ostimes[os_lim_ss])
+					sf=3D	;skip factor
+					IF ss[0] NE -1 THEN BEGIN
+						ss2=WHERE(abs(FINDGEN(N_ELEMENTS(ss))/sf-FLOOR(FINDGEN(N_ELEMENTS(ss))/sf)) LE 0.0001) 
+						IF ss2[0] NE -1 THEN ss2=ss[ss2]
+					ENDIF ELSE ss2=-1
+				
+					IF ss1[0] EQ -1 AND ss1[0] EQ -1 THEN PRINT,'Problem with skip method -- not skipping anything...'
+					IF ss1[0] EQ -1 AND ss2[0] NE -1 THEN BEGIN
+						imgtess=imgtess[*,*,*,ss2]
+						tintvs=tintvs[*,ss2]
+					ENDIF
+					IF ss1[0] NE -1 AND ss2[0] EQ -1 THEN BEGIN
+						imgtess=imgtess[*,*,*,ss1]
+						tintvs=tintvs[*,ss1]
+					ENDIF
+					IF ss1[0] NE -1 AND ss2[0] NE -1 THEN BEGIN
+						tmp=[ss1,ss2]
+						ss=tmp[UNIQ(tmp,SORT(tmp))]
+						imgtess=imgtess[*,*,*,ss]
+						tintvs=tintvs[*,ss]
+					ENDIF
+					n_tintvs=N_ELEMENTS(imgtess[0,0,0,*])
+				END						
+				ELSE: PRINT,'Skip method not recognized. Using default (i.e. no skipping)...'
+			ENDCASE
+		ENDIF
+	ENDIF
+
+	diffposmin2=4	;units are pixel^2
+	diffsizemin2=4	;additional sources that have same position (within diffposmin) AND same size (within diffsizemin) are discarded (i.e. only one is taken)
+	n_src_max=2	;max # of sources PER EBAND...
+	min_sigma=4	;minimum # sigmas above mean map value for a map to be considered something else than noise... 0 disables this check...
+	basesize=180
+	imspecplotysize=2-is_even(ndisp)
+	
+	n_yplots=ndisp+imspecplotysize+1
+	psh_win,basesize*n_tintvs,n_yplots*basesize
+	hessi_ct
+	rainbow_linecolors
+	
+	;if ichooser is >=0, means I only determine sources once...
+	IF ichooser GE 0 THEN BEGIN
+		src='blabla'
+		src_eband=INTARR(njchooser)
+		FOR j=0,njchooser-1 DO BEGIN
+			IF sjchooser LE 1 THEN tmpimg=imgtess[*,*,jchooser[j],ichooser] ELSE BEGIN
+				IF jchooser[0,j] EQ jchooser[1,j] THEN tmpimg=imgtess[*,*,jchooser[0,j],ichooser] ELSE tmpimg=TOTAL(imgtess[*,*,jchooser[0,j]:jchooser[1,j],ichooser],3)
+			ENDELSE
+			good_k=-1				
+			newsrc=hedc_imspec_extract_sources(tmpimg,min_sigm=min_sigma)
+			IF datatype(newsrc) EQ 'STC' THEN BEGIN
+			;IF any of the new sources are not too similar to previous ones, add them to the list!
+				IF datatype(src) EQ 'STC' THEN goon=1 ELSE BEGIN
+					good_k=0						
+					IF N_ELEMENTS(newsrc) GT 1 THEN BEGIN
+						src=newsrc[0]
+						newsrc=newsrc[1:N_ELEMENTS(newsrc)-1] 
+						goon=1
+					ENDIF ELSE goon=0
+				ENDELSE
+				k=0
+				WHILE goon DO BEGIN
+					toomany = (k GT n_src_max)
+					;old: ss=WHERE( ((src.xmax-newsrc[k].xmax)^2 LE diffposmin2) AND ((src.ymax-newsrc[k].ymax)^2 LE diffposmin2) AND ((src.gra-newsrc[k].gra)^2 LE diffsizemin2) AND ((src.grb-newsrc[k].grb)^2 LE diffsizemin2) ) 
+					;new:					
+					ss=WHERE( ((src.xmax-newsrc[k].xmax)^2 LE (src.gra*src.grb/4.)) AND ((src.ymax-newsrc[k].ymax)^2 LE (src.gra*src.grb/4.)) AND (src.gra*src.grb/newsrc[k].gra/newsrc[k].grb GE 1/2.)  AND (src.gra*src.grb/newsrc[k].gra/newsrc[k].grb LE 2.) ) 
+					toosimilar=(ss[0] NE -1)
+					IF ((NOT toosimilar) AND (NOT toomany)) THEN BEGIN
+						IF good_k[0] EQ -1 THEN good_k=k ELSE good_k=[good_k,k]
+					ENDIF
+					k=k+1
+					IF k GE N_ELEMENTS(newsrc) THEN goon=0
+				ENDWHILE 
+			ENDIF
+			;going on...
+			IF good_k[0] NE -1 THEN BEGIN
+				new_n_src=N_ELEMENTS(good_k) < n_src_max
+				src_eband[j]=new_n_src
+				IF datatype(src) NE 'STC' THEN src=newsrc[good_k[0:new_n_src-1]] ELSE src=[src,newsrc[good_k[0:new_n_src-1]]]
+			ENDIF
+		ENDFOR
+		IF datatype(src) EQ 'STC' THEN n_src=N_ELEMENTS(src) ELSE n_src=0
+	ENDIF ;//IF ichooser LT 0
+
+
+;HACK to make the later plot_map calls work properly also as a batch job...
+!P.MULTI=[n_yplots*n_tintvs-1,n_tintvs,n_yplots,0,1] & plot_map,{data: DIST(100), xc:0, yc:0, dx:1, dy:1, time:anytim(/TAI,'2000/02/26 01:00:00'), id:'DUMMY'}
+
+	;plot the lightcurve
+	clear_utplot
+	!P.MULTI=[0,1,n_yplots]	
+	utplot,ostimes,TOTAL(osrates[0:1,*],1),color=1,ytit='Corrected !CCts/s/det',/YLOG,yr=[1,10000],xtit='',charsize=1.5,xstyle=1,xmar=[6,1],ymar=[2,1]
+	outplot,ostimes,osrates[2,*],color=2
+	outplot,ostimes,TOTAL(osrates[3:4,*],1),color=3
+	outplot,ostimes,TOTAL(osrates[5:*,*],1),color=5
+	
+	plot_label,/NOLINE,/DEV,[0.03,-1],'3-12 keV',color=1
+	plot_label,/NOLINE,/DEV,[0.03,-2],'12-25 keV',color=2
+	plot_label,/NOLINE,/DEV,[0.03,-3],'25-100 keV',color=3
+	plot_label,/NOLINE,/DEV,[0.03,-4],'0.1-17 MeV',color=5
+
+	;plot image intervals...
+	FOR i=0L,n_tintvs-1 DO BEGIN
+		PLOTS,[tintvs[0,i],tintvs[0,i]],[1,1e4],thick=5,linestyle=2,color=4
+		PLOTS,[tintvs[0,i],tintvs[1,i]],[1e4,1e4],thick=5,linestyle=2,color=4
+		PLOTS,[tintvs[1,i],tintvs[1,i]],[1,1e4],thick=5,linestyle=2,color=4
+		PLOTS,[tintvs[0,i],tintvs[1,i]],[1,1],thick=5,linestyle=2,color=4
+		;plot_label,/NOLINE,/DEV,[0.03,-1],charsize=2.0,strn(i+1)
+		label_plot, tintvs[0,i]+0.2*(tintvs[1,i]-tintvs[0,i]) ,/XDATA,-1,charsize=1.5,strn(i+1),color=4
+	ENDFOR
+
+	;MAIN LOOP:-----------------------------------------------------------------------------------------------------------------
+	FOR i=0L,n_tintvs-1 DO BEGIN
+
+		;identify sources, if ichooser was >=0. Otherwise, this has already been done before entering the main loop.-----------------------------------
+		IF ichooser LT 0 THEN BEGIN
+			src='blabla'
+			src_eband=INTARR(njchooser)
+			FOR j=0,njchooser-1 DO BEGIN
+				IF sjchooser LE 1 THEN tmpimg=imgtess[*,*,jchooser[j],i] ELSE BEGIN
+					IF jchooser[0,j] EQ jchooser[1,j] THEN tmpimg=imgtess[*,*,jchooser[0,j],i] ELSE tmpimg=TOTAL(imgtess[*,*,jchooser[0,j]:jchooser[1,j],i],3)
+				ENDELSE
+				good_k=-1				
+				newsrc=hedc_imspec_extract_sources(tmpimg,min_sigm=min_sigma)
+				IF datatype(newsrc) EQ 'STC' THEN BEGIN
+				;IF any of the new sources are not too similar to previous ones, add them to the list!
+					IF datatype(src) EQ 'STC' THEN goon=1 ELSE BEGIN
+						good_k=0						
+						IF N_ELEMENTS(newsrc) GT 1 THEN BEGIN
+							src=newsrc[0]
+							newsrc=newsrc[1:N_ELEMENTS(newsrc)-1] 
+							goon=1
+						ENDIF ELSE goon=0
+					ENDELSE
+					k=0
+					WHILE goon DO BEGIN
+						toomany = (k GT n_src_max)
+						;old: ss=WHERE( ((src.xmax-newsrc[k].xmax)^2 LE diffposmin2) AND ((src.ymax-newsrc[k].ymax)^2 LE diffposmin2) AND ((src.gra-newsrc[k].gra)^2 LE diffsizemin2) AND ((src.grb-newsrc[k].grb)^2 LE diffsizemin2) ) 
+						;new:					
+						ss=WHERE( ((src.xmax-newsrc[k].xmax)^2 LE (src.gra*src.grb/4.)) AND ((src.ymax-newsrc[k].ymax)^2 LE (src.gra*src.grb/4.)) AND (src.gra*src.grb/newsrc[k].gra/newsrc[k].grb GE 1/2.)  AND (src.gra*src.grb/newsrc[k].gra/newsrc[k].grb LE 2.) ) 
+						toosimilar=(ss[0] NE -1)
+						IF ((NOT toosimilar) AND (NOT toomany)) THEN BEGIN
+							IF good_k[0] EQ -1 THEN good_k=k ELSE good_k=[good_k,k]
+						ENDIF
+						k=k+1
+						IF k GE N_ELEMENTS(newsrc) THEN goon=0
+					ENDWHILE 
+				ENDIF
+				;going on...
+				IF good_k[0] NE -1 THEN BEGIN
+					new_n_src=N_ELEMENTS(good_k) < n_src_max
+					src_eband[j]=new_n_src
+					IF datatype(src) NE 'STC' THEN src=newsrc[good_k[0:new_n_src-1]] ELSE src=[src,newsrc[good_k[0:new_n_src-1]]]
+				ENDIF
+			ENDFOR					
+			IF datatype(src) EQ 'STC' THEN n_src=N_ELEMENTS(src) ELSE n_src=0
+		ENDIF
+
+		;plot the pictures wanted------------------------------------------------------------------------------------------------------------------
+		!P.MULTI=[n_yplots*(n_tintvs-i)-1,n_tintvs,n_yplots,0,1]
+		n_src_already_plotted=0
+		FOR j=0,ndisp-1 DO BEGIN
+			IF sdisp LE 1 THEN tmpimg=imgtess[*,*,disp[j],i] ELSE BEGIN	
+				IF disp[0,j] EQ disp[1,j] THEN tmpimg=imgtess[*,*,disp[0,j],i] ELSE tmpimg=TOTAL(imgtess[*,*,disp[0,j]:disp[1,j],i],3)
+			ENDELSE			
+			;plot_image,tmpimg,/VEL,xmar=[1,1],ymar=[1,1],xtickname=REPLICATE(' ',10),ytickname=REPLICATE(' ',10),/NOADJ,ticklen=1.,xgridstyle=1,ygridstyle=1
+			map=make_hsi_map(tmpimg,infoctrl)
+			plot_vel_map,map,/LIMB,GRID=10,/NOLABELS,LMCOLOR=4,GCOLOR=4,/SQUARE,/NOTITLE,xmar=[5,1],ymar=[2,0],charsize=1.2
+			;oplot the contours of the sources, if they were found using this eband...
+			FOR k=0,src_eband[j]-1 DO BEGIN
+				cur_src=n_src_already_plotted	;cur_src=n_src-1-n_src_already_plotted				
+				;mytvellipse,src[cur_src].gra,src[cur_src].grb,src[cur_src].xmax,src[cur_src].ymax,src[cur_src].tet*180./!PI,/data,color=4
+				;XYOUTS,/DATA,src[cur_src].xmax+5,src[cur_src].ymax-5,strn(cur_src+1),color=4
+				; the following 2 lines assumes isotropicity of images...(no correction for angle of ellipse...)
+				mytvellipse,src[cur_src].gra*infoctrl.pixel_size[0],src[cur_src].grb*infoctrl.pixel_size[1],infoctrl.xyoffset[0]+infoctrl.pixel_size[0]*(src[cur_src].xmax-infoctrl.image_dim[0]/2+0.5),infoctrl.xyoffset[1]+infoctrl.pixel_size[1]*(src[cur_src].ymax-infoctrl.image_dim[1]/2+0.5),src[cur_src].tet*180./!PI,/data,color=4
+				XYOUTS,/DATA,infoctrl.xyoffset[0]+infoctrl.pixel_size[0]*(src[cur_src].xmax-infoctrl.image_dim[0]/2+5.5),infoctrl.xyoffset[1]+infoctrl.pixel_size[1]*(src[cur_src].ymax-infoctrl.image_dim[1]/2-4.5),strn(cur_src+1),color=4
+				IF KEYWORD_SET(STATS) THEN plot_label,/NOLINE,/DEV,[0.03,-k-2],strn(k+1)+': pos=['+strn(src[cur_src].xmax,format='(f10.1)')+','+strn(src[cur_src].ymax,format='(f10.1)')+']  size=['+strn(src[cur_src].gra,format='(f10.1)')+','+strn(src[cur_src].grb,format='(f10.1)')+']'
+				n_src_already_plotted=n_src_already_plotted+1
+			ENDFOR
+		ENDFOR
+		plot_label,/DEV,/NOLINE,[0.03,1],strn(i+1)+': '+anytim(tintvs[0,i],/ECS,/time,/trunc)+'-'+anytim(tintvs[1,i],/ECS,/time,/trunc),charsize=0.8,color=4
+			
+		; now, do the imspec proper:------------------------------------------------------------------------------------------------------------------
+	IF n_src GT 0 THEN BEGIN
+		sp=DBLARR(n_ebands,n_src)	;array to store spectra for each sources.
+		FOR k=0L,n_src-1 DO BEGIN
+			;sum every pixel inside the range, for every eband.
+			FOR j=0,n_ebands-1 DO BEGIN
+				sum=0d
+				npix=0L
+				FOR ix=0,xdim-1 DO BEGIN
+					FOR iy=0,ydim-1 DO BEGIN
+							;the following does not take into account the angle of the ellipse...
+							;IF ( ((ix-src[k].xmax)/src[k].gra)^2 +((iy-src[k].ymax)/src[k].grb)^2 ) LE 1d THEN BEGIN
+						IF (((ix-src[k].xmax)*cos(src[k].tet)+(iy-src[k].ymax)*sin(src[k].tet))/src[k].gra)^2 +((-(ix-src[k].xmax)*sin(src[k].tet)+(iy-src[k].ymax)*cos(src[k].tet))/src[k].grb)^2 LE 1d THEN BEGIN
+							sum=sum+imgtess[ix,iy,j,i]
+							npix=npix+1
+						ENDIF
+					ENDFOR
+				ENDFOR				
+				sp[j,k]=sp[j,k]+sum/(ebands[1,j]-ebands[0,j])/npix			;converts to ph/s/cm^2/asec^2/keV, and averages over source (hence, we get AVERAGED source INTENSITY)
+			ENDFOR		
+		ENDFOR
+		
+		;now, plot those spectra, and some fitting...
+		IF imspecplotysize EQ 2 THEN !P.MULTI=[(n_yplots*(n_tintvs-i)-ndisp-1)/2,n_tintvs,n_yplots/2,0,1]
+		FOR k=0L,n_src-1 DO BEGIN
+			IF k EQ 0 THEN color=!D.TABLE_SIZE-1 ELSE color=k
+			IF k EQ 0 THEN PLOT,ebins,sp[*,k],/XLOG,/YLOG,xmar=[5,1],ymar=[4,0],yr=[1e-6,1e4],color=color,psym=1,xtit='Photon energy [keV]',xrange=[4,100], xstyle=1 $
+			ELSE OPLOT,ebins,sp[*,k],color=color,psym=1			
+
+				txt=strn(k+1)+': '
+			;mpfitting with hedc_imspec_th_brem... and displaying the results... 
+				;choosing bins where we actually have an above I50_min, and below 15 keV
+				I50_min=1e-4	;0
+				ss=WHERE((sp[*,k] GT I50_min) AND (ebins LT 15) AND (ebins GE 4))
+				;(for better fitting, should remove any interval with the 6.4-6.9 keV Iron lines...)
+				IF N_ELEMENTS(ss) GT 2 THEN BEGIN
+					Y=infoctrl.PIXEL_SIZE[0]*infoctrl.PIXEL_SIZE[1]*sp[ss,k]
+					yfit='bla'
+					coeff=mpfitfun('hedc_imspec_th_brem',ebins[ss], Y, ERR, WEIGHT=1./Y^2, [0.001,1], YFIT=yfit,/QUIET,errmsg=errmsg)	;WEIGHT could be 1 or 1/Y ...
+			
+					IF ((errmsg EQ '') AND (datatype(YFIT) NE 'STR') AND (MIN(coeff) GE 0)) THEN BEGIN
+						OPLOT,ebins[ss],yfit/infoctrl.PIXEL_SIZE[0]/infoctrl.PIXEL_SIZE[1],thick=1.0,color=color
+						txt=txt+'T='+strn(coeff[1],format='(f10.1)')+' EM='+strn(coeff[0]*1d49,format='(e10.1)')+' '
+					ENDIF
+				ENDIF
+			;fitting a power-law... and displaying the results...
+				;choosing bins where we actually have an above I50_min, and inside the eband interval......
+				I50_min=1e-4	;0
+				ss=WHERE((sp[*,k] GT I50_min) AND (ebins GE fitEband[0]) AND (ebins LE fitEband[1]))
+				IF N_ELEMENTS(ss) GT 2 THEN coeff=hedc_imspec_robust_linefit(ALOG10(ebins[ss]),ALOG10(sp[ss,k]),yfit=yfit) ELSE coeff=-1
+					IF N_ELEMENTS(coeff) GE 2 THEN BEGIN
+					OPLOT,ebins[ss],10^yfit,thick=2.0,color=color
+					;txt=txt+'!7c!3='+strn(-coeff[1],format='(f10.1)')+' I!D50!N='+strn(10^(coeff[0]+coeff[1]*ALOG10(50)),format='(e10.1)')
+					txt=txt+'!7c!3='+strn(-coeff[1],format='(f10.1)')
+				ENDIF
+			;mpfitting with f_vth_bpow.pro... and displaying the results... 	---> troubles I didn't manage to solve.
+			;	;choosing bins where we actually have an above I50_min, and below 15 keV
+			;	I50_min=0;1e-4
+			;	ss=WHERE((sp[*,k] GT I50_min) AND (ebins GE 8))
+			;	IF N_ELEMENTS(ss) GT 2 THEN BEGIN
+			;		parinfo=REPLICATE({FIXED:0},8)
+			;		parinfo[4:7].FIXED=1
+			;		Y=infoctrl.PIXEL_SIZE[0]*infoctrl.PIXEL_SIZE[1]*sp[ss,k]
+			;		coeff=mpfitfun('f_vth_bpow',ebands[*,ss],Y, ERR,WEIGHT=1/Y, [1,1,1,3,500,4,1,1.5], YFIT=yfit ,PARINFO=parinfo,/QUIET)
+			;		IF errmsg EQ '' THEN BEGIN
+			;			OPLOT,ebins[ss],yfit/infoctrl.PIXEL_SIZE[0]/infoctrl.PIXEL_SIZE[1],thick=1.0,color=color
+			;			txt=txt+'T='+strn(coeff[1],format='(f10.1)')+' EM='+strn(coeff[0],format='(f10.2)')+' !7c!3='+strn(coeff[3],format='(f10.1)')
+			;		ENDIF
+			;	ENDIF
+
+				plot_label,/DEV,/NOLINE,[0.05,-k-1.5],txt,color=color,charsize=0.75
+		ENDFOR		
+	ENDIF ;//IF n_src GT 0
+	PRINT,'.......% completed: '+strn(100.*(i+1)/n_tintvs,format='(f10.1)')
+	ENDFOR ;//END OF MAIN LOOP
+;-------------------------------------------------------------------------------------------------------------------------------------------------------------
+;now, add a small margin to the left and on top, with some more info...
+	xmarginsize=30
+	ymarginsize=20
+	img=TVRD()
+	psh_win,xmarginsize+basesize*n_tintvs,n_yplots*basesize+ymarginsize
+	TV,img,xmarginsize,0
+	XYOUTS,10,0.2*imspecplotysize*basesize,/DEVICE,"Average source `intensity' !C[ph s!U-1!N cm!U-2!N asec!U-2!N keV!U-1!N]",ORIENTATION=90
+	FOR j=0,ndisp-1 DO BEGIN
+		IF sdisp LE 1 THEN emin=ebands[0,disp[j]] ELSE emin=ebands[0,disp[0,j]]
+		IF sdisp LE 1 THEN emax=ebands[1,disp[j]] ELSE emax=ebands[1,disp[1,j]]
+		XYOUTS,15,(0.35+ndisp-j+imspecplotysize-1)*basesize,/DEVICE,strn(emin,format='(f10.1)')+'-'+strn(emax,format='(f10.1)')+' keV',ORIENTATION=90
+	ENDFOR
+	XYOUTS,10,(n_yplots-0.8)*basesize,/DEVICE,"Corrected cts/s/det",ORIENTATION=90
+	XYOUTS,xmarginsize,n_yplots*basesize+ymarginsize-12,/DEVICE,'FLARE: '+anytim(tintvs[0,0],/ECS,/date)+' '+anytim(tintvs[0,0],/ECS,/time)+'-'+anytim(tintvs[0,N_ELEMENTS(tintvs[0,*])-1],/ECS,/time)
+	
+	IF KEYWORD_SET(pngfile) THEN BEGIN
+		TVLCT,r,g,b,/GET
+		WRITE_PNG,pngfile,TVRD(),r,g,b
+	ENDIF
+END
+;----------------------------------------------------------------------------------------------------------------------------------------
+

@@ -1,0 +1,70 @@
+%this is short summary of useful formulae for electron <-> photon
+%spectra conversion
+
+\documentclass[11pt]{article}
+\usepackage{a4,}
+%\documentclass{aa}
+%\usepackage{txfonts}
+%\usepackage{graphicx}
+
+%\onecolumn
+
+\begin{document}
+This is a short summary of some useful formul\ae\/ for the conversion
+between photon and electron spectra.
+Let's define:
+\begin{itemize}
+\item
+$F(E)$ is the hard X-ray flux at energy $E$ observed at 1 AU. Its units are
+photons $\mathrm{s}^{-1}$ $\mathrm{cm}^{-2}$ $\mathrm{keV}^{-1}$. 
+\item
+$\Phi (\epsilon)$ is the total electron flux at the sun. Its units are
+electrons $\mathrm{s}^{-1}$ $\mathrm{keV}^{-1}$. 
+\end{itemize}
+Using the nonrelativistic Bethe-Heitler bremsstrahlung cross section, and
+assuming an electron spectrum $\Phi (\epsilon)=A\epsilon^{-\delta}$, the 
+resulting thick target photon spectrum is given by (Lang \cite{lang98})
+\begin{equation}
+F(E)=A \frac{\kappa_{\mathrm{BH}} \overline{Z^2}}{4\pi R^2 C}
+\frac{B(\delta-2,1/2)}{(\delta-1)(\delta-2)} E^{1-\delta}
+\, ,
+\end{equation} 
+where
+\begin{eqnarray*}
+R                    & = & \mathrm{1 AU}=1.496\cdot 10^{13} \mathrm{cm}\\
+C                    & = & 2\pi e^4 \ln\Lambda = \ln\Lambda \cdot 1.303 \cdot 10^{-19} \mathrm{cm^2 keV^2} \\
+\kappa_{\mathrm{BH}} & = & \frac{8}{3} \alpha r_e^2 m_e c^2 = 7.896 \cdot 10^{-25} \mathrm{cm^2 keV} \\
+\overline{Z^2}       &   & \mbox{is the average atomic number, about 1.4 for solar conditions} \\
+\ln\Lambda           &   & \mbox{is the Coulomb logarithm, about 20 for solar conditions} \\
+B(x,y)               & = & \frac{\Gamma(x)\Gamma(y)}{\Gamma(x+y)} \quad \mbox{is the Beta function}
+\end{eqnarray*} 
+
+Using a slightly different notation:
+\begin{eqnarray*}
+F(E) & = & F_0 \left(\frac{E}{E_0}\right)^{-\gamma} \\
+\Phi(\epsilon) & = & \Phi _0 \left(\frac{\epsilon}{\epsilon_0}\right)^{-\delta}
+\end{eqnarray*}
+then
+\begin{eqnarray}
+\delta & = & \gamma + 1\\
+\Phi_0 & = & K\,{F_0}\,{E_0}^\gamma\,{\epsilon_0}^{-\gamma-1}
+             \frac{\gamma(\gamma-1)}{B(\gamma-1,1/2)}\\
+F_0    & = & \frac{1}{K}\,{\Phi_0}\,{E_0}^{1-\delta}\,{\epsilon_0}^{\delta}
+             \frac{B(\delta-2,1/2)}{(\delta-1)(\delta-2)}
+\end{eqnarray}
+with 
+\begin{eqnarray*}
+K & = & \frac{4\pi R^2 C}{\kappa_{\mathrm{BH}}\overline{Z^2}} =
+4.640 \cdot 10^{32} \,\mathrm{cm}^2\,\mathrm{keV} \,\frac{\ln\Lambda}{\overline{Z^2}}=
+6.44  \cdot 10^{33} \,\mathrm{cm}^2\,\mathrm{keV}
+\end{eqnarray*}
+
+
+\begin{thebibliography}{}
+\bibitem[1998]{lang98}
+Lang, Kenneth R., Astrophysical Formul\ae , Springer, 1998
+\end{thebibliography}
+
+
+
+\end{document}

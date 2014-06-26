@@ -1,0 +1,51 @@
+; PSH 2003/02/25
+; Computes the energy loss cross section due to collisional effects.
+;
+; Range of validity: NR electrons.
+;
+; INPUT: 
+;	E : electron energy [keV]	; can be 1-D array
+;	il: ionization level (default is 1., fully ionized)
+;	T: target temperature, in keV. Default is not used. (Emslie, 2003, "Death to low-E cut-off")
+;
+; KEYWORD INPUT:
+;	/mb: if set, returned result will be in mb instead of cm^2
+;
+; OUTPUT
+;	Qc: energy loss cross-section in [cm^2]
+;		(Gc=E*Qc is the energy loss per unit column density, in [kev.(cm^-2)^-1])
+;
+; HISTORY:
+;	2003/03/17: added keyword T
+;	2003/06/26: added keyword /mb
+;
+;------------------------------------------------------------------------------------------------------------------------------------------------------------
+FUNCTION collisional_energy_loss_crosssection__gth, E, T
+	;this is the ratio between collisional energy loss in a hot target to that in a cold target.
+	
+	gth=ERRORF(sqrt(E/T)) - 2*sqrt(E/T)*exp(-E/T)*2/sqrt(!dPI)
+	;ss=WHERE(E LT 0.98*T)
+	;IF ss[0] NE -1 THEN gth[ss]=0D
+	RETURN,gth
+END
+;------------------------------------------------------------------------------------------------------------------------------------------------------------
+FUNCTION collisional_energy_loss_crosssection, E, il, T=T, mb=mb
+
+	Qe=4.803206e-10	; esu
+	
+	CoulombLog_ee=20D
+	CoulombLog_eH=7.1D
+
+	CoulombLog=CoulombLog_ee-CoulombLog_eH
+	lambda=CoulombLog_eH/CoulombLog
+
+	x=DOUBLE(il) 
+		
+	;Energy_loss_cross_section for electrons incident on free an hydrogen-bound electrons.
+	Energy_loss_cross_section=2*!dPI*Qe^4*(x+lambda)*CoulombLog/(E*1.6e-9)^2	;this is in [cm^2]
+
+	IF KEYWORD_SET(mb) THEN Energy_loss_cross_section=Energy_loss_cross_section*1e27
+	IF KEYWORD_SET(T) THEN IF T GT 0. THEN Energy_loss_cross_section=Energy_loss_cross_section*collisional_energy_loss_crosssection__gth(E,T)
+	RETURN,Energy_loss_cross_section	;[cm^2]
+END
+;------------------------------------------------------------------------------------------------------------------------------------------------------------

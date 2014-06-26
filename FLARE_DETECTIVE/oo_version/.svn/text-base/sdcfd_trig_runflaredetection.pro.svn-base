@@ -1,0 +1,245 @@
+PRO sdcfd_trig_runflaredetection, allBinnedImagesRegular= allBinnedImagesRegular,allBinnedImagesSmooth= allBinnedImagesSmooth
+
+;
+; This program runs the flare detection program (the "flare Detective")
+; of the Feature Finding Team on the TRACE dataset in 171 A for
+; 16-SEP-2001 from 00 to 24 UT that can be found in the file 
+; TRACE_LEV1_20010916.zip distributed with th
+;
+; Make sure VOBS and ONTOLOGY are in SSW_INSTR (Also GEN, TRACE)
+
+; USER CUSTOMIZATION part
+
+; In order to run the code correctly, the following directories
+; should be set:
+
+; This directory should point to the TRACE level 1 data
+; for 16-SEP-2001 that are used as program INPUT
+;TraceLev1Dir='/Network/Servers/sdo1.cfa.harvard.edu/Users/Shared/ard/FFT/flare_module/ard_working/files'
+
+;finally! AIA dat is here
+;;AIALev1Dir='/home/pgrigis/machd2/aia_data_forflaredet/'
+
+;flare data for level0
+;; AIALev1Dir='/home/pgrigis/machd2/aia_data_forflaredet/level0/'
+
+;;paolo edit
+;TraceLev1Dir='/home/pgrigis/machd/traclev1/'
+
+
+
+; This directory is used to write the XML OUTPUT files
+;;VOEventFileDir='/Network/Servers/sdo1.cfa.harvard.edu/Users/Shared/ard/FFT/flare_module/ard_working/xml_files'
+
+
+;;paolo edit
+VOEventFileDir='/home/pgrigis/machd/newflarelist26/'
+VOEventFileAltDir='/home/pgrigis/machd/newflarelist26/'
+VOEventFileDir='/home/pgrigis/machd/newflarelist27/'
+VOEventFileAltDir='/home/pgrigis/machd/newflarelist27/'
+VOEventFileDir='/home/pgrigis/machd/newflarelist29/'
+VOEventFileAltDir='/home/pgrigis/machd/newflarelist29/'
+
+
+
+VOEventFileDir='/home/pgrigis/machd/newflarelist46/'
+VOEventFileAltDir='/home/pgrigis/machd/newflarelist46/'
+
+VOEventFileDir='/home/pgrigis/machd/newflarelist47/'
+VOEventFileAltDir='/home/pgrigis/machd/newflarelist47/'
+
+VOEventFileDir='/home/pgrigis/machd/newflarelist48/'
+VOEventFileAltDir='/home/pgrigis/machd/newflarelist48/'
+
+;; VOEventFileDir='/home/pgrigis/machd/newflarelist31/'
+;; VOEventFileAltDir='/home/pgrigis/machd/newflarelist31/'
+
+
+; Change for LMSAL (Or use config File)
+;VOEventSpecFile='/proj/DataCenter/ssw/vobs/ontology/data/VOEvent_Spec.txt'
+VOEventSpecFile='/home/pgrigis/sdodocs_svnrep/trunk/modules/oo_version/VOEvent_Spec.txt'
+
+
+;
+; Run the code proper:
+;
+
+
+;retrieve the files
+;files=file_search(TraceLev1Dir,'*.fts')
+
+
+;; pattern=['AIA*_0193.fits','AIA*_0094.fits','AIA*_0131.fits', $
+;;          'AIA*_0211.fits','AIA*_0171.fits','AIA*_0335.fits', $
+;;          'AIA*_0304.fits']
+
+;; ;threshold=[3.0,0.3,1.0,0.83,2.0,0.2,2.0]
+;;threshold=[3.0,0.3,0.75,0.83,2.0,0.2,2.0]
+
+;; ;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; pattern='AIA*_0131.fits'
+;; threshold=0.75
+
+;; pattern='AIA*_0094.fits'
+;; threshold=0.3
+
+
+;; duration=[120.,120.,120.,120.,120.,120.,120.]
+
+
+;; AIALev1Dir='/data/SDO/AIA/level1/2010/06/13/'
+;; AIALev1Dir='/data/SDO/AIA/level1/2010/06/13/'
+
+;; AIALev1Dir=['/data/SDO/AIA/level1/2010/06/12/', $
+;;             '/data/SDO/AIA/level1/2010/06/13/', $
+;;             '/data/SDO/AIA/level1/2010/06/14/']
+
+;; hours='H00'+string(findgen(24),format='(I02)')
+;; hours=hours;[2:15]
+
+
+
+;for kk=0,n_elements(pattern)-1 DO BEGIN 
+
+kk=0;2
+
+;; print,'Now searching for files matching '+pattern
+;; ;files=file_search(AIALev1Dir,pattern[kk])
+;; files=[file_search(AIALev1Dir[0],pattern[kk]),file_search(AIALev1Dir[1],pattern[kk])];,file_search(AIALev1Dir[2],pattern[kk])]
+;; nfiles=n_elements(files)
+;; print,'Found '+strtrim(nfiles,2)+' files'
+
+
+;get data
+
+;; d1='/data/SDO/AIA/level1/2010/11/06/H1500/'
+;; d2='/data/SDO/AIA/level1/2010/11/06/H1600/'
+
+;; pattern='AIA*_0171.fits'
+
+;; f1=file_search(d1,pattern)
+;; f2=file_search(d2,pattern)
+
+;; files=[f1,f2]
+
+
+;time_intv=['05-NOV-2010 00:00','10-NOV-2010 00:00']
+
+time_intv=['04-NOV-2010 15:30','07-NOV-2010 07:30']
+
+d=pg_timeintv_2dirst(time_intv)                    
+pattern='AIA*094.fits'
+files=file_search(d,pattern)
+
+
+;dir='/home/pgrigis/machd/aiatempdata/'
+;pattern='AIA*THIN*.fits'
+
+;files=file_search(dir,pattern)
+
+
+;new setting for 131 
+;threshold=0.02
+;too low
+;threshold=0.06
+;threshold=0.015
+;threshold=0.05
+threshold=0.02
+
+
+;mreadfits,files,headers
+
+;wavelength=171
+;ind=where(headers.wavelnth EQ wavelength,count)
+
+;IF count EQ 0 THEN BEGIN 
+;   print,'No images in '+wavelength+' A found. Returning.'
+;  RETURN 
+;ENDIF 
+
+;files=files[ind]
+
+; ;initialization - construction + detection with first image
+; sdcfd_trig_flaredet,filename=files[0],statfile='sdcfd_trig_flaredet.sav', $
+;		       verbose=1,/rebin,/renormalize, DerivativeThreshold=0.02, $
+;		       DespikeNpass=2,flareXRange=3, FlareYrange=3, $
+;		       VOEventFileDir=VOEventFileDir, event=event, $ 
+;		       VOEventSpecFile=VOEventSpecFile, status=status,debug=1, $
+;                      RunMode='Construct'
+
+
+;; ;initialization - construction + detection with first image
+;; sdcfd_trig_flaredet,filename=files[0], outputStatusFilename='sdcfd_trig_flaredet.sav', $
+;; 		       verbose=1,/rebin,/renormalize, DerivativeThreshold=0.02, $
+;; 		       DespikeNpass=2,flareXRange=3, FlareYrange=3, $
+;; 		       VOEventFileDir=VOEventFileDir, event=event, $ 
+;; 		       VOEventSpecFile=VOEventSpecFile, status=status,debug=1, $
+;;                     RunMode='Construct'
+
+
+;kk=0
+
+;PG 10-MAY-2010 this is the level0 version
+;initialization - construction + detection with first image
+sdcfd_trig_flaredet,filename=files[0], outputStatusFilename='sdcfd_trig_flaredet.sav', $
+		       verbose=1,/rebin,/renormalize, DerivativeThreshold=threshold,nx=32,ny=32, $
+		       DespikeNpass=0,flareXRange=3, FlareYrange=3, $
+		       VOEventFileDir=VOEventFileDir, event=event, $ 
+		       VOEventSpecFile=VOEventSpecFile, status=status,debug=3, $
+                       RunMode='Construct',flipImage=0,minflareduration=200.0;duration[kk]
+
+
+;PG 10-MAY-2010 this stores temporary info for the purpose of fine tuning the
+;algorithm
+debug=1
+debug=0
+
+;; thisStatus=status->getdata()
+;; thisBinnedImageRegular=(* thisStatus.pBinnedCurrentImage)
+;; thisBinnedImageSmooth=(* thisStatus.pData)[*,*,16]
+
+;; allBinnedImagesRegular=thisBinnedImageRegular
+;; allBinnedImagesSmooth=thisBinnedImageSmooth
+
+;process rest of images
+FOR i=1,n_elements(files)-1 DO begin
+
+   ;print,'Now processing file '+files[i]
+
+   sdcfd_trig_flaredet,filename=files[i], RunMode='Normal',status=status,verbose=3, $
+                       outputStatusFilename='sdcfd_trig_flaredet.sav',events=events, $
+                       imagerejected=imagerejected
+
+
+   sdcfd_writexmlfilesfromstring,events,OutputDirectory=VOEventFileAltDir
+
+
+;;    IF debug EQ 1 THEN BEGIN 
+;;       ;stop
+;;       IF imagerejected EQ 1 THEN BEGIN
+;;          print,'Image rejected: '+files[i]
+;;       ENDIF $
+;;       ELSE BEGIN 
+;;          ;stop
+;;          thisStatus=status->getdata()
+;;          thisBinnedImageRegular=(*thisStatus.pBinnedCurrentImage)
+;;          thisBinnedImageSmooth=(*thisStatus.pData)[*,*,16]
+
+;;          allBinnedImagesRegular=[[[allBinnedImagesRegular]],[[thisBinnedImageRegular]]]
+;;          allBinnedImagesSmooth =[[[allBinnedImagesSmooth]], [[thisBinnedImageSmooth]]]
+
+;;       ENDELSE  
+;;    ENDIF 
+
+
+ENDFOR 
+
+;endfor
+
+;cleanup at the end
+;sdcfd_trig_flaredet,status=s,/cleanup
+
+
+END 
+

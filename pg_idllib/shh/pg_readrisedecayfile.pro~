@@ -1,0 +1,169 @@
+;+
+; NAME:
+;
+; pg_readrisedecayfile
+;
+; PURPOSE:
+;
+; read data from a file containing rise and decay phases
+;
+; CATEGORY:
+;
+; IO util
+;
+; CALLING SEQUENCE:
+;
+; result=pg_readrisedecayfile(filename)
+;
+; INPUTS:
+;
+; 
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+; 
+;
+; OUTPUTS:
+;
+; 
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; AUTHOR:
+; Paolo Grigis, Institute for Astronomy, ETH Zurich
+; pgrigis@astro.phys.ethz.ch 
+;
+; MODIFICATION HISTORY:
+;
+; 01-DEC-2006 pg written
+;-
+
+;.comp pg_modfit
+
+FUNCTION pg_readrisedecayfile,filename=filename
+
+filename=fcheck(filename,'~/shh/risedecay.txt')
+
+eof=0
+
+openr,lun,filename,/get_lun
+
+thisline=''
+comment=';'
+
+firstintv=1
+updateallres=0
+allres={intv:-1L,rise:ptr_new(),decay:ptr_new(),flat:ptr_new()}
+isend=0
+
+WHILE ~(eof(lun) OR isend) DO BEGIN
+   readf,lun,thisline
+   print,thisline
+   
+   ;get first character
+   fchr=strmid(thisline,0,1)
+   f3chr=strmid(thisline,0,3)
+
+   IF fchr NE comment THEN BEGIN
+      IF f3chr EQ 'int' THEN BEGIN
+         ;parse intv string
+         res=strsplit(thisline,'=',/extract)
+         intv=long(res[1])
+
+         IF NOT firstintv THEN BEGIN               
+
+            IF n_elements(data)/2-1 GT 0 THEN $
+               thisst.flat=ptr_new(data[*,1:n_elements(data)/2-1])
+
+            allres=[allres,thisst]
+
+         ENDIF ELSE BEGIN 
+
+            firstintv=0
+
+         ENDELSE
+
+         thisst={intv:intv,rise:ptr_new(),decay:ptr_new(),flat:ptr_new()}
+         
+      ENDIF ELSE BEGIN 
+
+         CASE f3chr OF 
+
+            'RIS': BEGIN 
+               data=[-1,-1]
+            END
+
+            'DEC' : BEGIN
+
+               IF n_elements(data)/2-1 GT 0 THEN $
+                  thisst.rise=ptr_new(data[*,1:n_elements(data)/2-1])
+ 
+               data=[-1,-1]
+
+            END
+
+            'FLA': BEGIN 
+
+               IF n_elements(data)/2-1 GT 0 THEN $
+                  thisst.decay=ptr_new(data[*,1:n_elements(data)/2-1])
+ 
+               data=[-1,-1]
+
+            END
+
+            'END': BEGIN 
+               isend=1
+               BREAK
+            END
+
+
+            ELSE : BEGIN
+               res=strsplit(thisline,' ',/extract)
+               numbers=long(res)
+               data=[[data],[numbers]]
+            ENDELSE
+         ENDCASE
+
+      ENDELSE
+         
+
+   ENDIF
+
+
+   ;IF not comment then...
+
+ENDWHILE
+ 
+thisst.flat=ptr_new(data[*,1:n_elements(data)/2-1])
+allres=[allres,thisst]
+
+return,allres[1:n_elements(allres)-1]
+
+
+END

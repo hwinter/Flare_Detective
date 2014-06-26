@@ -1,0 +1,230 @@
+; purpose : to draw Hessi's subpoint position...
+;   takes into account Earth's oblateness.
+;
+; Feb 22th,2001 by Pascal Saint-Hilaire 
+; shilaire@astro.phys.ethz.ch OR psainth@hotmail.com
+;
+; INPUTS:  utc_time : an ANYTIM string
+;  hmm, with nskip=1 no bizarre interpolation errors occur;
+;	but with nskip=1, forget about differing linestyles
+;	FLAGS: array of 32 bits, to know which flag to draw...
+;
+;  EXAMPLE: plot_hessi_pos,'31-aug-00 '+['16:00','17:00']
+;			plot_hessi_pos,'01-sep-00 '+['00:01','00:54'],flags=[0,1,0,3,....]
+;		plot_hessi_pos,'2002/04/10 '+['12:00:00','13:00:00']
+;
+;IMPROVEMENTS PLANNED :
+; - could be improved easily (if I weren't so lazy) if I did NOT
+;   need to go through positional arrays (ECI(3,ntimes), lat(ntimes),
+;   lon(ntimes) and alt(ntimes)), but did the plotting on a step by 
+;   step basis.
+;
+; - could be further improved to use other projections, or plotting
+;	the actual position in space, instead of just the subpoint.
+;	(after all, I do have the altitude alt...)
+;		--> this is another .pro
+;
+; - some flags are more than just booleans (ex. COLD_PLATE_TEMP) : 
+;   this will have to be addressed sometime ...!
+;
+; Modified 2001/03/22 : input can be either a UT time range (as before)
+;			OR a Hessi fits data file.
+; Modified 2001/03/22 : added the flags, /night and /saa keywords
+;    flags is a bytarr(32) corresponding to OBSERVING SUMMARY flags:
+;putting a flag to a non-zero value actives it for drawing. It'll
+; use its value as its color index (sorry, using color index 0 would 
+; deactivate it ...)
+; if the /nocol (nocolor) is activated, then the flags value
+;   corresponds to the drawing psym...( 0 to 8 )
+;
+; Modified 2001/05/16 : MAJOR modifications : -can no longer input a file
+;											  -uses my_hessi_ct.pro
+;											  -added /all_science_flags keyword
+;											  -no B&W drawing (removed /nocol keyword)
+;
+; Modified 2001/08/22 : to accomodate latest Hessi software changes. (i.e. just added class_name='ephemeris'
+;															in call getdata call at line 105.)
+;
+;
+; Modified 2001/12/16-18 : improved the display (just a bit)
+;
+; Modified 2002/04/11 : lots of much-needed changes (wished flags entered as an array, interpolation...)
+;
+; Modified 2002/04/26 : added /MAG keyword
+;
+; Modified 2002/09/06 : modified becaus eof Jimm's modifications to the returned objects.
+;
+;
+; Modified 2006/10/10 by Marina Battaglia: modified color settings
+; (uses linecolors now)
+;
+;*************************************************************************************************
+;*************************************************************************************************
+
+
+pro plot_hessi_pos, time_interval, nskip=nskip, flags=flags, LOUD=LOUD, hoso=hoso, nolabels=nolabels,center=center,MAG=MAG
+
+IF NOT KEYWORD_SET(flags) THEN flags=[1,1,1,0,0,0,0,0,0,0,0,1,0,0,0,0,1,1,0,0,0]
+									;[1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0]
+deltalat=3.	; standard latitude difference between flag curves/markers
+
+
+linecolors
+hessicolor=7
+if not keyword_set(nskip) then nskip=15 ; one marker per 5 minute...except for events!
+
+saa=2
+night=8
+flare=5
+nonsolar=9
+decimation=12
+attenuator=12
+sunlight=4
+front=7
+gap=10
+grid=139
+
+IF NOT KEYWORD_SET(nolabels) THEN BEGIN
+	IF !D.NAME EQ 'Z' THEN lignetitre='HESSI Trajectory:  '+anytim(time_interval(0),/ECS,/truncate)+'  to  '+anytim(time_interval(1),/ECS,/truncate) $
+	ELSE lignetitre='HESSI Trajectory:  '+anytim(time_interval(0),/ECS)+'  to  '+anytim(time_interval(1),/ECS)
+ENDIF
+
+;now getting the ECI coordinates....
+hoso = obj_new('hsi_obs_summary')
+ECI_struct=hoso->getdata(class_name='ephemeris',obs_time_interval=time_interval)
+ECI=ECI_struct.XYZ_ECI
+times=hoso->getdata(class_name='ephemeris',/time)
+ntimes= n_elements(times)   
+
+;convert ECI to latitude and longitude
+
+geo=eci2geographic(ECI(0:2,*),times)
+
+IF NOT KEYWORD_SET(center) THEN map_set,0,0,/mercator,/isotropic,/continents,color=grid,title=lignetitre $	;charsize=1.5
+ELSE map_set,/mercator,/isotropic,/continents,color=grid,title=lignetitre,limit=[-85,lon(0),85,lon(ntimes-1)]
+
+; plotting HESSI trajectory...
+oplot,geo(1,*),geo(0,*),color=hessicolor,thick=3.0
+
+
+IF EXIST(FLAGS) THEN BEGIN
+
+	;OK now, getting the FLAGS...
+	;... and plot them !!!
+	flagdata_struct=hoso->getdata(class_name='obs_summ_flag')
+	flagdata=flagdata_struct.FLAGS
+	flaginfo=hoso->get(class_name='obs_summ_flag')
+		IF KEYWORD_SET(LOUD) THEN PRINT,flaginfo.flag_ids
+	flagtimes=hoso->getdata(class_name='obs_summ_flag',/time)
+	
+	flag_ECIx=INTERPOL(ECI(0,*),times,flagtimes)
+	flag_ECIy=INTERPOL(ECI(1,*),times,flagtimes)
+	flag_ECIz=INTERPOL(ECI(2,*),times,flagtimes)
+	nflagtimes= n_elements(flagtimes)
+
+	tmp=DBLARR(3,nflagtimes)
+	tmp(0,*)=flag_ECIx
+	tmp(1,*)=flag_ECIy
+	tmp(2,*)=flag_ECIz
+	
+	flaggeo=eci2geographic(tmp,flagtimes)
+	
+	;xyouts,15,25,'FLAGS CHECKED:',charsize=1.0,/device	
+	whichflags=WHERE(FLAGS NE 0)
+	nflags=N_ELEMENTS(whichflags)
+	curx=15
+	odd=0
+	FOR i=0,nflags-1 DO BEGIN
+		flagname=flaginfo.flag_ids(whichflags(i))
+			;IF KEYWORD_SET(LOUD) THEN BEGIN
+			;	PRINT,flagname
+			;	PRINT,flagdata(whichflags(i),*)
+			;ENDIF
+		flag_ss=where(flagdata(whichflags(i),*) NE 0)		
+		CASE flagname OF
+			'SAA_FLAG': BEGIN
+					color=saa
+					psym=2;5
+					;style=???
+					END
+			'ECLIPSE_FLAG': BEGIN
+				color=night
+				psym=2;5
+				END
+			'FLARE_FLAG': BEGIN
+				color=flare
+				psym=2
+				END
+			'SC_TRANSMITTER': BEGIN
+				color=sunlight
+				psym=2				
+				END
+			'SC_IN_SUNLIGHT': BEGIN
+				color=sunlight
+				psym=4
+				END
+			'SSR_STATE': BEGIN
+				color=attenuator
+				psym=1
+				END
+			'ATTENUATOR_STATE': BEGIN
+				color=attenuator
+				psym=4
+				END
+			'FRONT_RATIO': BEGIN
+				color=front
+				psym=1
+				END
+			'NON_SOLAR_EVENT': BEGIN
+				color=nonsolar
+				psym=2
+				END
+			'GAP_FLAG': BEGIN
+				color=gap
+				psym=7
+				END
+			'DECIMATION_ENERGY': BEGIN
+				color=decimation
+				psym=3
+				END
+
+			ELSE: BEGIN
+				color=hessicolor
+				psym=7
+				END
+		ENDCASE
+		IF NOT KEYWORD_SET(nolabels) THEN XYOUTS,curx,25+10*odd,flagname,charsize=1.0,color=color,/device
+		IF flag_ss(0) NE -1 THEN oplot,flaggeo(1,flag_ss),flaggeo(0,flag_ss)+deltalat*i*2.*(odd-.5),psym=psym,color=color,nsum=nskip $
+		ELSE IF KEYWORD_SET(LOUD) THEN PRINT,flagname+' is always 0 for this time interval'
+				
+		curx=curx+120*odd
+		IF odd EQ 0 THEN odd=1 ELSE odd=0
+	ENDFOR
+ENDIF
+
+
+
+;*******************************************************************************
+;OK, now the rest ...
+map_continents,/countries,color=grid
+
+lats = [ -90, -60, -30, 0, 30, 60, 90]
+latnames = strtrim(lats, 2)
+;latnames(where(lats eq 0)) = 'Equator'
+MAP_GRID, LABEL=2, LATS=lats, LATNAMES=latnames, LATLAB=7, $
+   LONLAB=-2.5, LONDEL=30, LONS=-30, ORIENTATION=0,color=grid
+
+IF NOT KEYWORD_SET(hoso) THEN obj_destroy,hoso
+
+IF KEYWORD_SET(MAG) THEN BEGIN
+	mcoord=DBLARR(2,360)
+	mcoord(1,*)=DINDGEN(360)
+	FOR i=1,11 DO BEGIN
+		mcoord(0,*)=90-i*15
+		gcoord=mag2geo(mcoord)
+		oplot,gcoord(1,*),gcoord(0,*),color=gap
+	ENDFOR
+ENDIF
+
+END
+

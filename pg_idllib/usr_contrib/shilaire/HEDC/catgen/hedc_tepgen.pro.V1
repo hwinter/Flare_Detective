@@ -1,0 +1,132 @@
+; time-energy panel (of images) generator
+;
+; if time_intvs are given (keyword), will disregard flare_intv and pick those times for imaging intvs. Otherwise looks for its own...
+;
+; EXAMPLES:
+;	hedc_tepgen, '2002/02/26 '+['10:26','10:29'],[925,-225],imgalg='back'
+;	hedc_tepgen, '2002/02/26 '+['10:26','10:29'],[925,-225],imgalg='back',time_intvs='2002/02/26 '+['10:26:30','10:27:00']
+;	hedc_tepgen, '2002/02/26 '+['10:26','10:29'],[925,-225],newdatadir=newdatadir,eventcode=eventcode,ev_struct=ev_struct,eventtype=eventtype
+;
+
+
+PRO hedc_tepgen, flare_intv, xyoffset, time_intvs=time_intvs,								$
+	deltat=deltat,imgalg=imgalg,detindex=detindex,pixsize=pixsize,imgdim=imgdim,ebands=ebands,pictype=pictype,	$
+	newdatadir=newdatadir,eventcode=eventcode,ev_struct=ev_struct,eventtype=eventtype		;needed keywords for writing HEDC stuff...
+	
+
+;initialization phase:
+	IF NOT KEYWORD_SET(deltat) THEN deltat=60. ELSE deltat=FLOAT(deltat)
+	IF NOT KEYWORD_SET(imgalg) THEN imgalg='clean'
+	IF NOT KEYWORD_SET(detindex) THEN detindex=[0,0,1,1,1,1,1,1,0]
+	IF NOT KEYWORD_SET(pixsize) THEN pixsize=1
+	IF NOT KEYWORD_SET(imgdim) THEN imgdim=128
+	IF NOT KEYWORD_SET(ebands) THEN ebands=[[3,6],[6,12],[12,25],[25,50],[50,100],[100,300]]
+	IF NOT KEYWORD_SET(pictype) THEN pictype='png'
+	IF KEYWORD_SET(time_intvs) THEN start_mvletter='f' ELSE start_mvletter='F'
+
+
+;local variables:
+	basesize=150
+	n_ebands=N_ELEMENTS(ebands[0,*])
+	
+	IF KEYWORD_SET(time_intvs) THEN t_intvs=time_intvs ELSE BEGIN
+		t_intvs=-1
+		good_img_intvs=to_nice_img_intervals(flare_intv,mindeltat=deltat/2.,/ATTLOW,/PARTICLES,wait_after_shutter=60.,wait_after_eclipse=120.)
+		IF N_ELEMENTS(good_img_intvs) THEN MESSAGE,'.......NO GOOD TIME INTV FOUND!'
+		good_img_intvs=anytim(good_img_intvs)
+		FOR i=0,N_ELEMENTS(good_img_intvs[0,*])-1 DO BEGIN
+			duration=good_img_intvs[1,i]-good_img_intvs[0,i]
+			n=duration/deltat	;n is a double
+			WHILE n GE 1. DO BEGIN
+				IF N_ELEMENTS(t_intvs) EQ 1 THEN t_intvs=good_img_intvs[1,i]-[n,n-1]*deltat ELSE t_intvs=[[t_intvs],[good_img_intvs[1,i]-[n,n-1]*deltat]]			
+				n=n-1.
+			ENDWHILE
+			IF n GE 0.5 THEN IF N_ELEMENTS(t_intvs) EQ 1 THEN t_intvs=good_img_intvs[1,i]-[n,0]*deltat ELSE t_intvs=[[t_intvs],[good_img_intvs[1,i]-[n,0]*deltat]]			
+		ENDFOR
+		IF N_ELEMENTS(t_intvs) EQ 1 THEN t_intvs=good_img_intvs
+	ENDELSE
+	
+	n_intvs=N_ELEMENTS(t_intvs[0,*])
+	
+	
+;start: some graphic stuff
+	hedc_win	
+	hessi_ct
+	TVLCT,r,g,b,/GET
+;start: now the main course	
+	imo=hsi_image()	
+	imo->set,image_alg=imgalg
+	imo->set,pixel_size=pixsize,image_dim=imgdim,xyoffset=xyoffset
+	imo->set,det_index_mask=detindex
+	imo->set_no_screen_output
+
+	imgs=FLTARR(imgdim[0],imgdim[0],n_intvs,n_ebands)
+	FOR i=0L,n_intvs-1 DO BEGIN
+		imo->set,time_range=t_intvs[*,i]
+		PRINT,'hedc_tepgen.pro:'+anytim(t_intvs[0,i],/ECS)+' to '+anytim(t_intvs[1,i],/ECS)
+		FOR j=0,n_ebands-1 DO BEGIN
+			eband=ebands[*,j]
+			imo->set,energy_band=eband
+			IF eband[1] GT 100 THEN imo->set,REAR=1 ELSE imo->set,REAR=0
+			mvletter=STRING( BYTE(start_mvletter)+ BYTE(j))
+			PRINT,'Eband: '+strn(eband[0])+' to '+strn(eband[1])+' keV.'						
+			img=imo->getdata()
+			IF N_ELEMENTS(img) NE 1 THEN BEGIN
+				imgs[*,*,i,j]=img
+				imo->plot,grid=10,charsize=charsize,/CBAR
+				IF KEYWORD_SET(newdatadir) THEN BEGIN
+					rootfilename=newdatadir+'HEDC_DP_mov'+mvletter+'_frame'+int2str(i,4)+'_'+eventcode
+					CALL_PROCEDURE,'write_'+pictype,rootfilename+'.'+pictype,TVRD(),r,g,b
+					info=imo->get()
+					IF FILE_EXIST(rootfilename+'.'+pictype) THEN hedc_write_info_file,'im',ev_struct,info,rootfilename+'.info',framenbr=i,moviename=eventtype+STRMID(eventcode,3)+mvletter
+					imo->fitswrite,fitsfile=rootfilename+'.fits',/CREATE				
+				ENDIF
+			ENDIF
+		ENDFOR
+	ENDFOR
+	
+	;all images have been calculated,
+	;make a panel of all those images...
+	
+	xsize=basesize*n_intvs
+	ysize=basesize*n_ebands
+	hedc_win,xsize,ysize
+	!P.MULTI=[0,n_intvs,n_ebands]
+	FOR j=0,n_ebands-1 DO BEGIN
+		FOR i=0,n_intvs-1 DO BEGIN
+			plot_image,imgs[*,*,i,j],xtickname=REPLICATE(' ',10),ytickname=REPLICATE(' ',10),/iso,charsize=0.01,/VEL,ticklen=0
+		ENDFOR
+	ENDFOR
+
+	;POLISH the panel:
+	addxsize=20
+	addysize=20
+	img1=TVRD()
+	img2=BYTARR(xsize+addxsize,ysize+addysize)
+	img2[addxsize:xsize+addxsize-1,0:ysize-1]=img1
+	hedc_win,xsize+addxsize,ysize+addysize
+	TV,img2
+	XYOUTS,/DEV,15,30+basesize*0,charsize=0.8,ORIENTATION=90,'100-300 keV'
+	XYOUTS,/DEV,15,30+basesize*1,charsize=0.8,ORIENTATION=90,'50-100 keV'
+	XYOUTS,/DEV,15,30+basesize*2,charsize=0.8,ORIENTATION=90,'25-50 keV'
+	XYOUTS,/DEV,15,30+basesize*3,charsize=0.8,ORIENTATION=90,'12-25 keV'
+	XYOUTS,/DEV,15,40+basesize*4,charsize=0.8,ORIENTATION=90,'6-12 keV'
+	XYOUTS,/DEV,15,40+basesize*5,charsize=0.8,ORIENTATION=90,'3-6 keV'
+	FOR i=0,n_intvs-1 DO BEGIN 
+		XYOUTS,/DEV,addxsize+i*basesize+10,ysize+addysize-10,anytim(t_intvs[0,i],/ECS,/time_only)+ ' to'
+		XYOUTS,/DEV,addxsize+i*basesize+10,ysize+addysize-20,anytim(t_intvs[1,i],/ECS,/time_only)		
+	ENDFOR
+
+	IF KEYWORD_SET(newdatadir) THEN BEGIN
+		IF KEYWORD_SET(time_intvs) THEN rootfilename=newdatadir+'HEDC_DP_pte1_'+eventcode ELSE rootfilename=newdatadir+'HEDC_DP_pten_'+eventcode
+		CALL_PROCEDURE,'write_'+pictype,rootfilename+'.'+pictype,TVRD(),r,g,b
+		info=imo->get()
+		info.ABSOLUTE_TIME_RANGE=flare_intv
+		info.ENERGY_BAND=[ebands[0,0],ebands[1,n_ebands-1]]
+		IF FILE_EXIST(rootfilename+'.'+pictype) THEN hedc_write_info_file,'ptn',ev_struct,info,rootfilename+'.info'
+		imo->fitswrite,fitsfile=rootfilename+'.fits',/CREATE
+	ENDIF
+
+PRINT,'...............hedc_tepgen.pro FINISHED without crashes!!'
+END
+

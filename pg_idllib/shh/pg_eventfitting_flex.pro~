@@ -1,0 +1,261 @@
+;.comp ~/shh/eventfitting_parab.pro
+
+PRO eventfitting_parab,savefiledir,allselectdata=allselectdata $
+                     ,addbspectrum=addbspectrum,doplot=doplot $
+                     ,verbose=verbose
+
+
+fixed=bytarr(3,6)+1B
+fixed[0,[3,4]]=0B
+fixed[1,[0,1,2,5]]=0B
+fixed[2,[0,1,2,3,4,5]]=0B
+
+
+useprevious=bytarr(3,6)
+useprevious[1,[3,4]]=1B
+useprevious[2,[0,1,2,3,4,5]]=1B
+
+
+startvalues=dblarr(3,6)
+startvalues[0,*]=[-0.1d,-2.,0,1.,1.,1.]
+startvalues[1,*]=[-0.1d,-2.,1,1.,1.,1.]
+startvalues[2,*]=[-0.1d,-2.,1,1.,1.,1.]
+
+parnames=['A_PAR','B_PAR','EXPC_PAR', $
+          'EM','TEMP','LAMBDA_BACK']
+
+
+limited=bytarr(2,9)+1B
+limits=dblarr(2,9)
+
+limited[*,0]=[1,1]
+limits[*,0]=[-5,0]
+limited[*,1]=[1,1]
+limits[*,1]=[-20,-1]
+limited[*,2]=[1,1]
+limits[*,2]=[0.,1d10]
+limited[*,3]=[1,1]
+limits[*,3]=[0.,1d4]
+limited[*,4]=[1,1]
+limits[*,4]=[0.1,1000]
+limited[*,5]=[1,1]
+limits[*,5]=[0.5,2.]
+
+
+partmodels=[ptr_new([2,8]),ptr_new([3,4,8])]
+partmodelvalues=[ptr_new([0.,0]),ptr_new([0.,1,0.])]
+
+flexst={ $
+         modelfunction:'pg_parabmod', $
+         npar:n_elements(parnames), $
+         parnames:parnames, $
+         enorm: 50., $
+         nfitrounds:3, $
+         fitrange:[[12.,25],[40,70],[12,500]], $
+         fixed:fixed, $
+         useprevious:useprevious, $
+         startvalues:startvalues, $
+         limits:limits, $
+         limited:limited, $
+         partmodels:partmodels, $
+         partmodelvalues:partmodelvalues, $
+         partcol:[2,7] $
+       }
+
+
+
+
+IF NOT exist(savefiledir) THEN BEGIN
+   print,'Please input a save file name!'
+   RETURN
+ENDIF
+
+dir='~/work/shh_data/spsrmfiles/shhcandlist/'
+
+sppile00files=file_search(dir+'sp*nopileupcorr*')
+srmpile00files=file_search(dir+'srm*nopileupcorr*')
+sppile06files=file_search(dir+'sp*pileup06*')
+srmpile06files=file_search(dir+'srm*pileup06*')
+sppile08files=file_search(dir+'sp*pileup08*')
+srmpile08files=file_search(dir+'srm*pileup08*')
+sppile10files=file_search(dir+'sp*pileup10*')
+srmpile10files=file_search(dir+'srm*pileup10*')
+
+
+;FOR i=0,n_elements(allselectdata)-1 DO BEGIN 
+FOR i=0,n_elements(allselectdata)-1 DO BEGIN 
+
+   thisspfile=sppile00files[(*allselectdata[i]).event]
+   thissrmfile=srmpile00files[(*allselectdata[i]).event]
+
+   spgin=pg_spfitfile2spg(thisspfile,/new,/edges,/filter,/error) ;units: counts s^(-1)
+   spg=pg_spg_uniformrates(spgin,/convert_edges) ;units: count s^-1 keV^-1
+   drm=pg_readsrmfitsfile(thissrmfile)
+
+   cntedges=drm.cntedges
+   enmean=sqrt(cntedges[*,0]*cntedges[*,1])
+
+   ;background interval & spectra
+   time=spg.x
+   brange=(*allselectdata[i]).brange
+   bind=where(time GE brange[0] AND time LE brange[1],count)
+
+   IF count GT 0 THEN BEGIN 
+
+      bspectrum=total(spg.spectrogram[bind,*],1)/n_elements(bind)
+      bespectrum=sqrt(total(spg.espectrogram[bind,*]^2,1))/n_elements(bind)
+
+   ENDIF ELSE BEGIN 
+
+      bspectrum=addbspectrum.spectrum
+      bespectrum=addbspectrum.bespectrum
+
+   ENDELSE
+
+
+   ;do fittings...
+   fit_time_intv=(*allselectdata[i]).intrange
+
+   thermrange=[12,25]
+   nonthermrange=[30,60]
+
+   fitresult00=pg_eventfit_flex(flexst,spg=spg,drm=drm,fitinterval=fit_time_intv $
+                          ,bspectrum=bspectrum,bespectrum=bespectrum $
+                          ,doplot=doplot,verbose=verbose)
+
+
+
+   thisspfile=sppile06files[(*allselectdata[i]).event]
+   thissrmfile=srmpile06files[(*allselectdata[i]).event]
+
+   spgin=pg_spfitfile2spg(thisspfile,/new,/edges,/filter,/error) ;units: counts s^(-1)
+   spg=pg_spg_uniformrates(spgin,/convert_edges) ;units: count s^-1 keV^-1
+   drm=pg_readsrmfitsfile(thissrmfile)
+
+   cntedges=drm.cntedges
+   enmean=sqrt(cntedges[*,0]*cntedges[*,1])
+
+   ;background interval & spectra
+   time=spg.x
+   brange=(*allselectdata[i]).brange
+   bind=where(time GE brange[0] AND time LE brange[1],count)
+
+   IF count GT 0 THEN BEGIN 
+
+      bspectrum=total(spg.spectrogram[bind,*],1)/n_elements(bind)
+      bespectrum=sqrt(total(spg.espectrogram[bind,*]^2,1))/n_elements(bind)
+
+   ENDIF ELSE BEGIN 
+
+      bspectrum=addbspectrum.spectrum
+      bespectrum=addbspectrum.bespectrum
+
+   ENDELSE
+
+
+   ;do fittings...
+   fit_time_intv=(*allselectdata[i]).intrange
+
+   thermrange=[12,25]
+   nonthermrange=[30,60]
+
+ 
+   fitresult06=pg_eventfit_flex(flexst,spg=spg,drm=drm,fitinterval=fit_time_intv $
+                          ,bspectrum=bspectrum,bespectrum=bespectrum $
+                          ,doplot=doplot,verbose=verbose)
+
+
+
+
+   thisspfile=sppile08files[(*allselectdata[i]).event]
+   thissrmfile=srmpile08files[(*allselectdata[i]).event]
+
+   spgin=pg_spfitfile2spg(thisspfile,/new,/edges,/filter,/error) ;units: counts s^(-1)
+   spg=pg_spg_uniformrates(spgin,/convert_edges) ;units: count s^-1 keV^-1
+   drm=pg_readsrmfitsfile(thissrmfile)
+
+   cntedges=drm.cntedges
+   enmean=sqrt(cntedges[*,0]*cntedges[*,1])
+
+   ;background interval & spectra
+   time=spg.x
+   brange=(*allselectdata[i]).brange
+   bind=where(time GE brange[0] AND time LE brange[1],count)
+
+   IF count GT 0 THEN BEGIN 
+
+      bspectrum=total(spg.spectrogram[bind,*],1)/n_elements(bind)
+      bespectrum=sqrt(total(spg.espectrogram[bind,*]^2,1))/n_elements(bind)
+
+   ENDIF ELSE BEGIN 
+
+      bspectrum=addbspectrum.spectrum
+      bespectrum=addbspectrum.bespectrum
+
+   ENDELSE
+
+
+   ;do fittings...
+   fit_time_intv=(*allselectdata[i]).intrange
+
+   thermrange=[12,25]
+   nonthermrange=[30,60]
+
+
+   fitresult08=pg_eventfit_flex(flexst,spg=spg,drm=drm,fitinterval=fit_time_intv $
+                          ,bspectrum=bspectrum,bespectrum=bespectrum $
+                          ,doplot=doplot,verbose=verbose)
+
+
+   thisspfile=sppile10files[(*allselectdata[i]).event]
+   thissrmfile=srmpile10files[(*allselectdata[i]).event]
+
+   spgin=pg_spfitfile2spg(thisspfile,/new,/edges,/filter,/error) ;units: counts s^(-1)
+   spg=pg_spg_uniformrates(spgin,/convert_edges) ;units: count s^-1 keV^-1
+   drm=pg_readsrmfitsfile(thissrmfile)
+
+   cntedges=drm.cntedges
+   enmean=sqrt(cntedges[*,0]*cntedges[*,1])
+
+   ;background interval & spectra
+   time=spg.x
+   brange=(*allselectdata[i]).brange
+   bind=where(time GE brange[0] AND time LE brange[1],count)
+
+   IF count GT 0 THEN BEGIN 
+
+      bspectrum=total(spg.spectrogram[bind,*],1)/n_elements(bind)
+      bespectrum=sqrt(total(spg.espectrogram[bind,*]^2,1))/n_elements(bind)
+
+   ENDIF ELSE BEGIN 
+
+      bspectrum=addbspectrum.spectrum
+      bespectrum=addbspectrum.bespectrum
+
+   ENDELSE
+
+
+   ;do fittings...
+   fit_time_intv=(*allselectdata[i]).intrange
+
+   thermrange=[12,25]
+   nonthermrange=[30,60]
+
+
+   fitresult10=pg_eventfit_flex(flexst,spg=spg,drm=drm,fitinterval=fit_time_intv $
+                          ,bspectrum=bspectrum,bespectrum=bespectrum $
+                          ,doplot=doplot,verbose=verbose)
+
+
+   fitres=[fitresult00,fitresult06,fitresult08,fitresult10]
+
+   savefilename=savefiledir+'parab_basic_intv_'+smallint2str(i,strlen=2)+'.sav'
+
+   save,fitres,filename=savefilename
+
+ENDFOR
+
+RETURN
+
+END
+

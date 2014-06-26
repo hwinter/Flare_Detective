@@ -1,0 +1,145 @@
+;+
+;
+; NAME:
+;       imseq_ltc
+;
+; PROJECT: 
+;       rhessi - data analysis
+;
+; PURPOSE: 
+;       plot lightcurves from a sequence of images
+;
+; CALLING SEQUENCE:
+;       imseq_ltc,ptr,lev=lev,tim=tim,lc=lc,plot=plot
+;
+; INPUTS:
+;       ptr: array of pointer to map structures
+;       lev: percent of maximum of total image used for selecting the ROI
+; OUTPUT:
+;       by keywords
+;       
+; KEYWORDS:
+;       lc,tim: lightcurve & time array 
+;
+; EXAMPLE:
+;        
+;
+; VERSION:
+;       28-JAN-2002 (re)written, based on imaginglightcurvemap
+;
+; COMMENT:
+;       
+;
+;       
+;
+; AUTHOR
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;-
+
+PRO imseq_ltc,ptr,lev=lev,lc=lc,tim=tim,totalflux=totalflux;,roi=roi
+
+; -------------------------------------------------
+; find max in the sequence
+; -------------------------------------------------
+
+dim=size(ptr)
+
+; maxim=0
+
+; FOR t=0,dim[1]-1 DO BEGIN       ;time intervals
+;     IF ptrim[t] NE ptr_new() THEN BEGIN
+;         IF max((*ptrim[t]).data) GT maxim THEN BEGIN
+;             maxim=max((*ptrim[t]).data)
+;             maxtime=t
+;         ENDIF
+;     ENDIF
+; ENDFOR
+
+
+
+;------------------------------------------------------
+;define region of interest (ROI)
+;------------------------------------------------------
+
+
+IF NOT exist(lev) THEN lev=0.5
+
+totmap=summaps(ptr)
+data=totmap.data
+
+
+; low=0
+; WHILE ptrim[low] EQ ptr_new() DO low=low+1
+ 
+
+
+; IF NOT exist(roi) THEN BEGIN
+;     data=(*ptrim[low]).data
+;     FOR i=low,dim[1]-1 DO BEGIN
+;         IF ptrim[i] NE ptr_new() THEN $
+;         data=data+(*ptrim[i]).data
+;     ENDFOR
+
+
+q=ptr_new(where2(data GT lev*max(data)))  
+
+roi=q
+
+;q gives the ROI
+
+;ENDIF ELSE q=roi
+
+
+;----------------------------------------------------------
+;generate lightcurve
+;----------------------------------------------------------
+
+lc=fltarr(dim[1])
+tim=dblarr(dim[1])
+
+
+maxim=0
+
+IF NOT exist(totalflux) THEN numpix=(size(*roi))[2] $
+ELSE numpix=1
+
+FOR t=0,dim[1]-1 DO BEGIN       ;time intervals
+
+    IF ptr[t] NE ptr_new() THEN BEGIN 
+        lc[t]=total((*ptr[t]).data[(*q)[0,*],(*q)[1,*]])/numpix
+
+        tim[t]=anytim((*ptr[t]).time)
+    ENDIF ELSE $
+    BEGIN
+        lc[t]=!values.F_NAN 
+
+        tim[t]=!values.F_NAN   
+    ENDELSE
+ENDFOR
+  
+lc=lc[where(finite(lc))]
+tim=tim[where(finite(tim))]
+
+END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

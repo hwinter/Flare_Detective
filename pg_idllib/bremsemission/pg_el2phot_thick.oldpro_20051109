@@ -1,0 +1,101 @@
+;+
+; NAME:
+;      pg_el2phot_thick
+;
+; PURPOSE: 
+;      Transform an input injected electron spectrum flux (el. s^-1
+;      cm^-2 keV^-1) given as an array of values for a discrete set
+;      of energies into an emitted photon spectrum in units of
+;      photons s^-1 cm^-3 keV^-1 
+;      This correspond to the so-called "thick-target" emission,
+;      where (non-relativistic) collisional energy losses are assumed.
+;
+; CALLING SEQUENCE:
+;      photsp=pg_el2phot_thin(elsp=elsp,ele=ele,phe=phe [optional keywords?])
+;
+; INPUTS:
+;      elsp: array of N elements with the electron spectrum
+;      ele:  array of N elements with the elctron energies
+;      phe:  array of M elements with the desired photon energies
+;
+; KEYWORDS:
+;      
+;
+; OUTPUT:
+;      photsp: photon spectrum at nergies eph
+;       
+;
+; COMMENT:
+;
+;
+; EXAMPLE:   
+;
+;
+; VERSION:
+;       18-OCT-2005 written PG
+;       
+; AUTHOR:
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;-
+
+
+
+FUNCTION pg_el2phot_thick,elsp=elsp,ele=ele,phe=phe,z=z $
+  ,distance=distance,volumetar=volumetar,densitytar=densitytar $
+  ,coulomblog=coulomblog,surfacetar=surfacetar,_extra=_extra $
+  ,holman=holman
+
+
+;check inputs & set default values if needed
+
+;volume not needed --> surface needed
+;volumetar=fcheck(volumetar,1d27);target volume in cm^3
+surfacetar=fcheck(surfacetar,1d18);target surface in cm^2
+
+;for the thick target situation, the target density
+;is irrelevent. However, the keyword densitytar
+;is allowed, but ignored, such that formally
+;one can call pg_el2phot_thin & pg_el2phot_thick with the same
+;syntax
+;densitytar=fcheck(densitytar,1d10);target density, ions cm^-3
+distance=fcheck(distance,1.496d13);distance from source, default: 1 AU
+coulomblog=fcheck(coulomblog,20);coulomb logarithm
+z=fcheck(z,1.);average atomic number in target
+
+mc2   = 510.998918d ;rest mass of the electron, in keV
+elcharge=4.8032044d-10;electron charge in statcoulombs/esu (1C=2.998*10^9 statc)
+
+elspflux=elsp
+
+nph=n_elements(phe)
+photsp=dblarr(nph)
+
+IF max(phe) GE 0.5*max(ele) THEN BEGIN 
+   print,'To get meaningful results out of this routine one should'
+   print,'have that the max electron energy is larger than at least'
+   print,'twice the max photon energy!'
+   RETURN,-1
+ENDIF
+
+brem_cross='pg_brem_genbh'
+
+;get integrated spectrum: elspbar
+dummy=pg_tabint(ele,elspflux,z=elspbar,/cumulative)
+
+
+;loops over photon energies, needed because of the cross section
+;and integration thereof
+FOR i=0,nph-1 DO BEGIN 
+
+   xin=ele
+   yin=ele*elspbar*call_function(brem_cross,phe[i],ele,z,_extra=_extra)
+   photsp[i]=pg_tabint(xin,yin)
+
+ENDFOR 
+
+;add physical factors
+RETURN,photsp*(surfacetar/(4d*!DPi*distance*distance))*1d/(2d*!Dpi*elcharge^4*coulomblog)
+
+END
+
+

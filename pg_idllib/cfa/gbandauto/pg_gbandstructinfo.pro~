@@ -1,0 +1,62 @@
+;+
+; NAME:
+;
+; pg_gbandstructinfo
+;
+; PURPOSE:
+;
+; reads in a g-band image file and prduces output info on brightness
+;
+; CATEGORY:
+;
+; gband dataproduct automatic creation
+;
+; CALLING SEQUENCE:
+; 
+; pg_gbandstructinfo,
+;
+; INPUTS:
+;
+; tim_intv: a 2 elemnt array in anytim compatible format;
+;           The file is created for that time.
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; MODIFICATION HISTORY:
+;
+;-
+

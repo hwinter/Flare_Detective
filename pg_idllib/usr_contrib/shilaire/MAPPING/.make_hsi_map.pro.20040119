@@ -1,0 +1,26 @@
+;
+;
+; PSH 2002/02/28
+; Modified 2003/12/15: returns -1 if image generation failed.
+;
+
+
+
+FUNCTION make_hsi_map, im_obj
+
+image=im_obj->getdata()
+IF N_ELEMENTS(image) EQ 1 THEN RETURN,-1
+info=im_obj->get()
+
+map =  make_map( image, $
+                 xc=info.xyoffset[0], $
+                 yc=info.xyoffset[1], $
+                 dx=info.pixel_size[0], $
+                 dy=info.pixel_size[1], $
+                 time=anytim(info.ut_ref,/tai),$ 
+				 xunits='arcsecs',$ 
+				 yunits='arcsecs',$
+				 id='HESSI'	)
+
+RETURN, map
+END

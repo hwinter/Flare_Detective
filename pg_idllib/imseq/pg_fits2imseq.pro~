@@ -1,0 +1,85 @@
+;+
+;
+; NAME:
+;        pg_fits2imseq
+;
+; PURPOSE:
+;        read in a set of FITS files and transform them into maps
+;
+; CALLING SEQUENCE:
+;
+;        imseq=pg_fits2imseq(filelist)
+;
+; INPUTS:
+;
+;        filelist: list of strings of filenames
+;
+; OUTPUT:
+;
+; EXAMPLE:
+;
+;        
+;
+; VERSION:
+;
+;        14-FEB-2007 written, based on imseq_manip
+;
+; AUTHOR
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;       pgrigis@astro.phys.ethz.ch
+;-
+
+;.comp pg_fits2imseq
+
+function pg_fits2imseq,filelist,xrt=xrt
+  
+  nfile=n_elements(filelist)
+
+  imseq=ptrarr(nfile)
+
+  okind=-1L
+
+  for i=0,nfile-1 do begin
+
+     if file_exist(filelist[i]) then begin 
+
+        okind=[okind,i]
+
+        fits2map,filelist[i],map,header=h
+
+        data=double(map.data)
+
+        map2=rem_tag(map,'data')
+        map=add_tag(map2,data,'data')
+
+ 
+        if keyword_set(xrt) then begin
+
+           ;stop
+           index=fitshead2struct(h)
+
+           ;stop
+
+           map2=add_tag(map,index.ec_fw1_,'FW1')
+           map=add_tag(map2,index.ec_fw2_,'FW2')
+
+           map=add_tag(map,index.exptime,'exp_time')
+
+           map.id='XRT: '+map.fw1+'/'+map.fw2
+
+        endif
+
+       imseq[i]=ptr_new(map)
+
+     endif
+
+  endfor
+
+
+  if n_elements(okind) GT 1 then imseq=imseq[okind[1:n_elements(okind)-1]] else imseq=-1
+  
+  return,imseq
+  
+end
+
+

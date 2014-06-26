@@ -1,0 +1,84 @@
+; PURPOSE:
+;	Will create image tesseract fitsfile (with good time intervals). A panel of images can later be made (hedc_tepgen.pro),
+;	or imaging spectroscopy (hedc_imspec.pro).
+;
+;	EXAMPLE:
+;		hedc_migen,'2002/02/26 '+['10:26','10:27'], [925,-225], 'TEMP/tesseract',/IMSPECebands			
+;		hedc_migen,'2003/10/24 '+['02:45','02:46'], [-891,-328], 'TEMP/tesseract',ebands=[[12,25],[25,50]], imagetesseract=imagetesseract	
+;		hedc_migen,'2003/10/24 '+['02:45','02:46'], [-891,-328], 'TEMP/tesseract',/IMSPECebands	
+;		hedc_migen,'2003/11/03 '+['09:44','10:02'], [932,134], 'TEMP/tesseract20031103_0951',/IMSPECebands
+;		hedc_migen,'2003/10/24 '+['02:27','03:00'], [-891,-328], 'TEMP/tesseract',/IMSPECebands	
+;
+;
+;
+;	rootfilnam is filename WITHOUT extension!
+;	ebands is a [2,n_ebands] array!
+;
+;
+; HISTORY:
+;	PSH 2003/11/18 : added /SKIP keyword (takes only 1 out of 3 time intervals, if 7 or more are present.)
+;	PSH 2003/04/02: added max_nbr_intvs keyword...
+;	PSH 2004/08/09: uses hedc_get_relevant_img_intv...
+;	PSH 2004/09/17: modified to accomodate new keywords from Andre...
+;	PSH 2004/09/28: V3: added somestdout to detail the job that will be run (debugging purposes).
+;
+;--------------------------------------------------------------------------------------------------------------------------------------------------
+PRO hedc_migen, flare_intv, xyoffset, rootfilnam, time_intvs=time_intvs,	$
+	deltat=deltat,imgalg=imgalg,detindex=detindex,pixsize=pixsize,imgdim=imgdim,ebands=ebands,IMSPECebands=IMSPECebands,	$
+	imagetesseract=imagetesseract, 												$ 	;OPTIONAL OUTPUT
+	eventcode=eventcode,ev_struct=ev_struct					;needed keywords for writing HEDC .info stuff...
+	
+
+;initialization phase:
+	IF NOT KEYWORD_SET(deltat) THEN deltat=60. ELSE deltat=FLOAT(deltat)
+	IF NOT KEYWORD_SET(imgalg) THEN imgalg='clean'
+	IF NOT KEYWORD_SET(detindex) THEN detindex=[0,0,1,1,1,1,1,1,0]
+	IF NOT KEYWORD_SET(pixsize) THEN pixsize=1
+	IF NOT KEYWORD_SET(imgdim) THEN imgdim=128
+	IF NOT KEYWORD_SET(ebands) THEN ebands=[[3,6],[6,12],[12,25],[25,50],[50,100],[100,300]]
+	IF KEYWORD_SET(IMSPECebands) THEN ebands=[[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10,12],[12,14],[14,16],[16,18],[18,20],[20,25],[25,30],[30,35],[35,40],[40,45],[45,50],[50,60],[60,70],[70,80],[80,90],[90,100]]
+
+;Explain the job that will be done:
+	PRINT,'++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++'
+	PRINT,'hedc_migen.pro will be run with the following inputs (not all keywords have been checked...):'
+	txt="hedc_migen,['"+anytim(flare_intv[0],/ECS)+"','"+anytim(flare_intv[1],/ECS)+"'],["+strn(xyoffset[0])+","+strn(xyoffset[1])+"],'"+rootfilnam+"',deltat="+strn(deltat)
+	IF KEYWORD_SET(IMSPECebands) THEN txt=txt+",/IMSPECebands"
+	PRINT,txt
+	PRINT,'----------------------------------------------------------------------------------------------'
+	
+;local variables:
+	n_ebands=N_ELEMENTS(ebands[0,*])
+	
+	IF KEYWORD_SET(time_intvs) THEN t_intvs=time_intvs ELSE t_intvs=hedc_get_relevant_img_intv(flare_intv, deltat=deltat, max_nbr_intvs=20, REDUCE=0)
+		
+	n_intvs=N_ELEMENTS(t_intvs[0,*])
+	
+;start: now the main course	
+	mmo=hsi_multi_image()
+	mmo->set,im_time_interval=t_intvs
+	mmo->set,im_energy_bin=ebands
+	;ss=WHERE(ebands GT 100) & IF ss[0] EQ -1 THEN mmo->set,FRONT=1,REAR=0 ELSE mmo->set,FRONT=1,REAR=1 		;If ANY of the ebands is above 100, have to use rear detectors for ALL images...
+	mmo->set,FRONT=1,REAR=0
+	mmo->set,DECIMATION_CORRECT=1
+	mmo->set,image_alg=imgalg
+	mmo->set,pixel_size=pixsize,image_dim=imgdim,xyoffset=xyoffset
+	mmo->set,det_index_mask=detindex
+	mmo->set_no_screen_output
+	mmo->set,progress_bar=0
+	mmo->set,verbose=1
+	mmo->set,im_out=rootfilnam+'.fits'
+	imagetesseract=mmo->getdata()	
+
+	IF KEYWORD_SET(eventcode) THEN BEGIN
+		info=mmo->get()
+		info.ABSOLUTE_TIME_RANGE=anytim(flare_intv)
+		info.ENERGY_BAND=[ebands[0,0],ebands[1,n_ebands-1]]
+		hedc_write_info_file,'isp',ev_struct,info,rootfilnam+'.info'
+	ENDIF
+
+	OBJ_DESTROY,mmo
+PRINT,'...............hedc_migen.pro finished.'
+END
+
+
+

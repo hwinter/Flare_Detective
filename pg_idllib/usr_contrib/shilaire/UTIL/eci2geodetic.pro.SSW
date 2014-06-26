@@ -1,0 +1,113 @@
+;+
+; NAME:
+;       ECI2GEODETIC
+;	
+;		This routine is obselete and shoudl no longer be used.
+;
+; PURPOSE:
+;	Converts ECI coordinates to GEODETIC coordinates (a.k.a. ellipsoidal coordinates). 
+;	ECI coords are also known as Geocentric Equatorial Inertial System.
+;	GEODETIC coordinates are the longitude,latitude and altitude above the ellipsoidal 
+;	surface of the Earth.
+;	This routine is ideal for determining a satellite's subpoint (i.e. exact position
+;	above the surface of the Earth).
+;
+;	see http://www.spenvis.oma.be/spenvis/help/background/coortran/
+;
+; CALLING SEQUENCE:
+; 	eci2geodetic,ECIx,ECIy,ECIz,time,elat,elon,ealt
+;
+; INPUT:
+;	
+;		ECIx, ECIy, ECIz	: ECI X,Y,Z cartesian coordinates. May be 1-D arrays.
+;
+;		time: time (in any of the ANYTIM formats). May be 1-D arrays.
+;
+; KEYWORD INPUTS:
+;		None
+;
+; OUTPUT:
+;		elat, elon, ealt : latitude(s), longitude(s) and altitude(s) in 
+;		[degrees,degrees,km above Earth's SURFACE], in the ellipsoidal (geodetic)
+;		coordinate system.
+;
+; COMMON BLOCKS:
+;		None
+;
+; RESTRICTIONS:
+;
+;
+; EXAMPLES:
+;		IDL> eci2geodetic,10000,0,10000,'2002/03/09 21:00:00.000',elat,elon,ealt
+;		IDL> print,elat,elon,ealt
+;
+; MODIFICATION HISTORY:
+;		Written by Pascal Saint-Hilaire (shilaire@astro.phys.ethz.ch) on 2001/02/21
+;		
+;-
+
+;================================================================================================
+FUNCTION eci2geodetic_singlepoint,incoord,time
+	;{ Reference:  The 1992 Astronomical Almanac, page K12. }
+	
+	xkmper   = 6378.137        ;{Earth equatorial radius - kilometers (WGS '84 / GRS '80)}
+	f        = 1/298.257	   ;{Earth flattening (WGS '84 / GRS '80)}
+
+	x=DOUBLE(incoord(0))
+	y=DOUBLE(incoord(1))
+	z=DOUBLE(incoord(2))
+
+	theta=atan(y,x)
+	t=anytim(time,/ex)
+	ct2lst,gst,0,0,ten(t(0),t(1)),t(4),t(5),t(6)
+	angle_sid=gst*2.*!PI/24.
+	lon= (theta - angle_sid ) MOD (2* !PI)
+	if lon lt 0. then lon=lon+(2* !PI)	
+	r=sqrt(x^2+y^2)
+	e2=f*(2-f)
+	lat=atan(z,r)
+
+	phi=lat
+	c=1/sqrt(1-e2*sin(phi)^2)
+	lat=atan((z+xkmper*c*e2*sin(phi)),r )		
+
+	while abs(lat-phi) ge 1e-10 do begin
+			     phi=lat
+			     c=1/sqrt(1-e2*sin(phi)^2)
+			     lat=atan( (z+xkmper*c*e2*sin(phi)) , r )		
+	endwhile
+	
+	alt=r/cos(lat) - xkmper*c	
+	
+	lat=lat*180./(!PI)	; to convert from radians into degrees...
+	lon=lon*180./(!PI)
+
+	RETURN,[lat,lon,alt]
+END
+;================================================================================================
+PRO eci2geodetic,xECI,yECI,zECI,times,elat,elon,ealt
+
+	;initialize output:
+	elat=-1
+	elon=-1
+	ealt=-1
+	
+	npts=N_ELEMENTS(times)	
+	IF ((N_ELEMENTS(xECI) NE npts) OR (N_ELEMENTS(yECI) NE npts) OR (N_ELEMENTS(zECI) NE npts)) THEN RETURN
+		
+		tmp=eci2geo_singlepoint([xECI(0),yECI(0),zECI(0)],times(0))
+		elat=tmp(0)
+		elon=tmp(1)
+		ealt=tmp(2)
+
+	IF npts GT 1 THEN BEGIN
+		FOR i=1L,npts-1 DO BEGIN
+			tmp=eci2geodetic_singlepoint([xECI(i),yECI(i),zECI(i)],times(i))
+			elat=[elat,tmp(0)]
+			elon=[elon,tmp(1)]
+			ealt=[ealt,tmp(2)]
+		ENDFOR
+	ENDIF
+END
+;================================================================================================
+

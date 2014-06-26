@@ -1,0 +1,97 @@
+;+
+;NAME:
+; 	rapp_get_callisto.pro
+;PROJECT:
+; 	ETHZ Radio Astronomy
+;CATEGORY:
+; 	Utility
+;PURPOSE:
+;
+;
+;CALLING SEQUENCE:
+;
+;
+;INPUT:
+; 	
+;
+;OPTIONAL INPUT:
+; 
+;
+;
+;KEYWORD INPUT:
+;
+;
+;
+;
+;
+;OUTPUT:
+;
+;KEYWORD OUTPUT:
+;
+;CALLS
+;
+;RESTRICTIONS:
+;	For now, /ELIM works only if I have BOTH modes (L1+L2 or LC+RC).
+;
+;EXAMPLES:
+;	spg=rapp_get_callisto('2004/07/31 '+['10:30','10:50'])
+;	spg=rapp_get_callisto('2004/07/31 '+['10:30','10:50'], datalabel,/BACK,/ELIM,/DESPIKE,/SMOOTH)
+;	
+;
+;HISTORY:
+;	Pascal Saint-Hilaire, 2004/09/17
+;		shilaire@astro.phys.ethz.ch
+;	PSH, 2005/02/25: added 58 & 59 for L1 & L2
+;-
+
+;==============================================================================================
+FUNCTION rapp_get_callisto, time_intv, datalabel, DIFF=DIFF, BACK=BACK, ELIM=ELIM, DESPIKE=DESPIKE, DEBUG=DEBUG, sources=sources, SMOOTHING=SMOOTHING
+	archdir='/ftp/pub/rag/callisto/observations/'
+	IF NOT KEYWORD_SET(sources) THEN possible_sources=['BLEN5M','ZSTS'] ELSE possible_sources=sources
+	IF KEYWORD_SET(SMOOTHING) THEN BEGIN
+		IF SMOOTHING EQ 1 THEN SMOOTHING=5
+	ENDIF
+	
+	FOR i=0,N_ELEMENTS(possible_sources)-1 DO BEGIN
+		src=possible_sources[i]
+		data1=rapp_get_spectrogram(time_intv,xaxis=xaxis,yaxis=yaxis,/NODECOMPRESS,/ANYTIM,archivedir=archdir,valid_file_identifiers='*'+src+['*l1.fit*','*lc.fit*','*_58.fit*'], BACK=BACK, DESPIKE=DESPIKE)
+		data2=rapp_get_spectrogram(time_intv,xaxis=xaxis,yaxis=yaxis,/NODECOMPRESS,/ANYTIM,archivedir=archdir,valid_file_identifiers='*'+src+['*l2.fit*','*rc.fit*','*_59.fit*'], BACK=BACK, DESPIKE=DESPIKE)		
+		IF ((datatype(data1) NE 'STR') OR (datatype(data2) NE 'STR')) THEN BREAK
+	ENDFOR	
+	IF ((datatype(data1) EQ 'STR') AND (datatype(data2) EQ 'STR')) THEN BEGIN
+		PRINT,'No data found! Returning a dummy string...'
+		RETURN,'No data found!'
+	ENDIF
+
+	PRINT,'Data source: '+src
+	datalabel=src
+	
+	IF ((datatype(data1) EQ 'STR') OR (datatype(data2) EQ 'STR')) THEN BEGIN
+		PRINT,'...Warning: Only one mode available!'
+		IF datatype(data1) EQ 'STR' THEN BEGIN
+			data=data2
+			datalabel=datalabel+' L2 or RC'
+		ENDIF ELSE BEGIN
+			data=data1
+			datalabel=datalabel+' L1 or LC'
+		ENDELSE
+	ENDIF ELSE BEGIN
+		IF KEYWORD_SET(DIFF) THEN BEGIN
+			data=data1-data2 
+			datalabel=datalabel+' L1-L2 or LC-RC'
+		ENDIF ELSE BEGIN
+			data=data1+data2
+			datalabel=datalabel+' L1+L2 or LC+RC'
+		ENDELSE
+		IF KEYWORD_SET(DEBUG) THEN BEGIN
+			spectro_plot,{spectrogram:data1,x:xaxis,y:yaxis},{spectrogram:data2,x:xaxis,y:yaxis},{spectrogram:data,x:xaxis,y:yaxis}
+			PRINT,minmax(data1)
+			PRINT,minmax(data2)
+			PRINT,minmax(data)
+		ENDIF
+	ENDELSE
+	IF KEYWORD_SET(ELIM) THEN rapp_elim_wrong_channels, data, xaxis, yaxis
+	IF KEYWORD_SET(SMOOTHING) THEN data=SMOOTH(data,SMOOTHING)
+
+	RETURN,{spectrogram:data,x:xaxis,y:yaxis}
+END

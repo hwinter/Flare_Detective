@@ -1,0 +1,123 @@
+ binned_elist_obj = imo -> Framework::Get(/obj,class_name='hsi_binned_eventlist')
+ be=binned_elist_obj->getdata()
+********************************************************************
+********************************************************************
+********************************************************************
+HESSI command-line ref.
+
+**********************************
+astrolib	: to set some non-standard ASTROLIB environmental variables
+fits_info,'/global/lepus/usr/users/shilaire/HESSI/fits/image2.fits' ;,textout=1	: to get info on a fits !
+**********************************
+hprint, headfits('/global/helene/users/shilaire/HESSI/test_data/hsi_20000831_1557_000.fits',ext=1)
+	-- this one works also for .fits.gz files ! (more or less...)
+**********************************
+data=readfits('HESSI/test_data/hessi_flare_list.fits',header,exten_no=1) ;,heap)
+	; readfits() is also very powerful to view certain portions of a binary table...
+
+data=mrdfits('/global/lepus/usr/users/shilaire/HESSI/fits/image2.fits',extensionnbr,head)
+	: this at least gives kind of a structured array...
+**********************************
+mwrfits,mystruct,'TEMP/filedb.fits'
+**********************************
+print,getenv('HSI_DATA_ARCHIVE')
+setenv,'HSI_DATA_ARCHIVE=./HESSI/test_data'
+print,getenv('USER_SYNOP_DATA')
+**********************************
+CAUTION when using .reset_session : I loose (SSW?) system variables such
+as !ASPECT, !IMAGE , etc...
+defsysv,'!ASPECT',1.0
+**********************************
+remove_path,'atest'
+**********************************
+
+
+
+
+**********************************
+IDL>im = obj->GetData( CLASS_NAME = 'HSI_Calib_eventlist' ) 
+	HSI_BProj               
+			Back projection
+       HSI_Calib_Eventlist
+                       Calibrated event list
+       HSI_Clean
+                       Clean image reconstruction algorithm
+       HSI_Eventlist
+                       Event list
+       HSI_Image
+                       Reconstructed image
+       HSI_Lightcurve
+                       Count rate time profile
+       HSI_Modul_Pattern
+                       Modulation pattern
+       HSI_Packet
+                       Telemetry packet
+       HSI_PSF
+                       Point spread function
+       HSI_Spectrum
+                       Count rate spectrum
+
+*********************************************************
+IDL>bp = obj->GetData( CLASS_NAME = 'HSI_BPROJ', THIS_DET_INDEX=3 )
+*********************************************************
+to retrieve modulation profiles :
+
+IDL>image_dim = o->Get( /IMAGE_DIM )
+IDL>vimage = FltArr( image_dim[0], image_dim[1] )
+IDL>vimage[25, 45] = 1
+IDL>modprof = o->GetData( CLASS_NAME = 'HSI_MODUL_PROFILE', VIMAGE=vimage,
+       THIS_DET_INDEX=5 )
+*********************************************************
+IDL>modpat = o->GetData( CLASS_NAME ='HSI_MODUL_PATTERN', I1=n, I2=m )
+
+IDL>cbe = a->GetData( CLASS_NAME ='HSI_CALIB_EVENTLIST', THIS_DET_INDEX=4 )
+
+IDL>eventlist = a->GetData( CLASS_NAME = 'HSI_EVENTLIST' ) 
+
+IDL>p = o->GetData( THIS_PACKET_INDEX ) 
+
+****************************************************************************
+
+
+elist_obj=hsi_eventlist()
+control_param=obj->get(class_name='hsi_eventlist',/control_only,/this_class_only)
+	
+***********************************************************************************************	
+; the following lines are just a reminder of what can of stuff I can access...
+	
+	;oso=obj_new('hsi_obs_summary')
+	;rate=oso->getdata(/obs_summ_rate)
+	;info=oso->get(/info)
+	;data=oso->getdata(class_name='obs_summ_rate',obs_time_interval='31-aug-01 '+['16:00','17:00'])
+	;data=oso->getdata(class_name='particle_rate')
+	;data=oso->getdata(class_name='mod_variance')
+	;ECI=oso->getdata(class_name='ephemeris')
+	;times=oso->getdata(/time)
+	;uttimes = anytim(obs_summ->getdata(/time),/ints)
+	;oso->plot,/ephemeris
+
+**********************************************************************************************	
+print,HSI_OBS_SUMM_DECOMPRESS([0,1,100,200,255])
+ 0           1        1264       98288     1015792
+**********************************************************************************************	
+ftp=obj_new('ftp')    ; see ftp__define.pro doc...
+**********************************************************************************************	
+pr_env
+**********************************************************************************************	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

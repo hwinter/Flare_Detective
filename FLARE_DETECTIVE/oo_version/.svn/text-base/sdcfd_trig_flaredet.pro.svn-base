@@ -1,0 +1,548 @@
+;+
+; PROJECT:
+;
+;    SDO Feature Finding Team
+;
+; NAME:
+;
+;    SDCFD_TRIG_FLAREDET
+;
+; PURPOSE:
+;
+;    This programs works in a way similar to what Alisdair and Jonathan envision
+;    for detecting flares. In particular, this program is meant to be called
+;    everytime a new image is available and is based on a status file.  
+;
+; CATEGORY:
+;
+;    SDO FFT - Flare Detective - Trigger
+;
+; CALLING SEQUENCE:
+;
+;    sdcfd_trig_flaredet,filename=filename,status=status[,error=error,verbose=verbose 
+;                       ,nx=nx,ny=ny,DerivativeThreshold=DerivativeThreshold,renormalize=renormalize $
+;                       ,thistime=thistime,firstimage=firstimage,rebin=rebin,EndFraction=EndFraction ]
+;
+;
+;
+; INPUTS:
+; 
+;    filename: FITS file with (TRACE level 1 for now) image to be read in
+;    (but see below for the critical role of status)
+;
+; OPTIONAL INPUTS:
+;
+;    status: the status of the program, usually updated from the last run. If
+;            this is not given, the program will create a status structure. But,
+;            this is meant to happen only the first time the program is run
+;            (typically, with the first image). Normally, status is input,
+;            because it is the *only* way that the program keeps track of
+;            what's going on.
+;    thistime: overrides the image time from the FITS header (for testing/debugging)
+;    nx,ny: size of the rebinned image (only useful when creating status,
+;            otherwise read from status)
+;    DerivativeThreshold: threshold of derivative to detect flares (only useful when creating status,
+;            otherwise read from status)
+;    EndFraction: flux level to stop flare, as fraction of peak flux minus start
+;            flux (only useful when creating status, otherwise read from status)
+;    verbose: control diagnostic output of the program. 1 is reccomended and is
+;             the default value. O is pretty quiet but outputs error messages
+;             and a few more bits. -1 is totally silent (not recomennded). 2 and
+;             3 are increasingly verbose and normally are used for debugging purposes.
+; 
+;   
+; KEYWORD PARAMETERS: 
+;
+;    firstimage: if set, no flare detection is performed (not useful with only
+;                one image anyway), but image data is stored into status.
+;    rebin: if set, forces rebinning of the image to status.nx by status.ny
+;    renormalize: if set, the image data is divided by the exposure time (as
+;                 found in the FITS header keyword XXXX )
+;    
+;
+;
+; OUTPUTS:
+;
+;    error: the error status explained below
+;           0 : success
+;           1 : image file not found
+;           5 : problem with bookkeeping of flares (likely due to a bug of the
+;                  this program or corrupt status)
+;           6 : problem with IsFlare tag  (likely due to a bug of the
+;                  this program or corrupt status)
+;          -1 : unknown error
+;
+; OPTIONAL OUTPUTS:
+;
+;    NONE
+;
+; COMMON BLOCKS:
+;
+;    NONE
+; 
+; SIDE EFFECTS:
+;
+;    NONE
+;
+; RESTRICTIONS:
+;
+;    
+;
+; PROCEDURE:
+;
+;     This programs need to work incrementally: i.e. it is callled every time a
+;     new image is available. Therefore, there is a very important structure
+;     (the status) that keeps track of what had happened in previous runs of the
+;     program. Flares are first detected when the derivative of the lightcurves
+;     is larger than DerivativeThreshold. The end time is decided when the flux
+;     is below the start flux increased by EndFraction of the difference between
+;     start flux and peak flux.
+;
+;     The program keeps track of flares in neighboring pixels, because we don't
+;     want them to be separated events. The logic to keep track of that is a bit
+;     complex:
+;
+;     -if a new pixels flares, it is a "primary" flares f there are no close
+;         flares active, and a "secondary" flare otherwise.
+;
+;     -a new primary flares cause a new event to "open"
+;
+;     -when a secondary flares ends, no special action is taken
+;
+;     -when a primary flares end, either active secondaries are promoted to
+;         primary or, if there are no secondaries left, the event is "closed"
+;
+;     -secondaries are monitored for peak flux, if any of them has a larger peak
+;         flux than the primary, it is promoted to new primary and the primary turns secondary
+;
+;
+; EXAMPLE:
+; 
+;     Let's assumes "files" is an array of valid FITS filenames.
+;     As a first step, we can create a status structure by calling the program
+;     with /first:
+;
+;     IDL> s=-1
+;     IDL> sdcfd_trig_flaredet,filename=files[0],status=s,DerivativeThreshold=0.001,thistime=0.0,/first
+;
+;     then we can loop over the files to detect flares
+;
+;        
+;     IDL>   FOR j=1,n_elements(files)-1 DO BEGIN 
+;     IDL>      sdcfd_trig_flaredet,filename=files[j],status=s,thistime=float(j)
+;     IDL>   ENDFOR
+;
+;
+; VERSION CONTROL SYSTEM STRING:
+;
+;   $Id: sdcfd_trig_flaredet.pro 54 2009-07-08 19:56:09Z pgrigis $
+;
+; AUTHOR:
+;
+;    Paolo C. Grigis, pgrigis@cfa.harvard.edu
+;
+; MODIFICATION HISTORY:
+;  
+;    04-NOV-2008 written (first draft) PG
+;    06-JAN-2009 improved documentation PG
+;    29-APR-2009 changed to conform to pipeline environment as I understand it PG
+;    05-MAY-2009 further edits to improve performance and simplify logic PG
+;    06-MAY-2009 added logic to group flares in adjecents pixels PG
+;    08-MAY-2009 finished debugging of grouping logic, improved documentation PG
+;    12-MAY-2009 implemented VOEvent output format PG
+;    18-MAY-2009 branched for dealing with TRACE data PG
+;    19-MAY-2009 implement despiking PG
+;    08-JUL-2009 added keyword for output directory, changed min flare duration
+;                to 2 minutes, fixed typo in thistime variable PG
+;                TODO: keep track of the number of images!
+;    09-JUL-2009 ARD Modified code to do own status keeping using IDL save
+;                    file. Now use fstatus instead of status.
+;                    Replaced status veriable with statusfile as input and
+;                    removed. firstimage. Whether or not this is the first time
+;                    through is now evaluated. Added status to return status
+;                    to java bridge. 
+;    22-JUL-2009 ARD Codes returned with some edits from Ryan. See text file
+;                    RYANS_COMMENTS.
+;    10-AUG-2009 ARD Additional edits to come into compliance with LMSAL
+;                    requirements.
+;                    - Don't need to save and restore status file. Status
+;                      struture maintained through calling routine.
+;                    - All times (not from FITS file) should be in UTC.
+;                    - Added minflareduration flag - flares will not be
+;                      reported until they have existed at least this long.
+;                    - default event_expires to 24 hours
+;                    Still need to sort errors...
+;    08-12-09 ARD FlareVStruct.optional.event_expires now uses UTC+24 hours.
+;                 Trick is to use /stime as argument for anytim with sys2utc()
+;                 which gives time in format addtime understands.
+;               - Defined restart flag
+;    08-12-09 ARD Created VOEventSpecFile parameter which contains location of
+;                 VOEvent_Spec.txt at LMSAL. LMSAL nodes can't see normal
+;                 solarsoft installation. Value is empty in configuration file
+;                 at SAO.
+;    08-13-09 ARD Assume VOEventSpecFile is always defined.
+;    08-13-09 ARD In discussion with Ryan will now use numActiveEvents to
+;                 return the number of active events to the EDS. The variable
+;                 'status' will now be used in all modules to keep track of
+;                 ongoing events. (Was fstatus)
+;    09-02-09 ARD Worked in Ryan's changes to export_event calls to add the
+;                 flare index to the suffix, otherwise you'd get a collision
+;                 if two flares were detected with the same start time.
+;    03-SEP-2009 PG now outputs coordinates in solar arcseconds
+;    23-SEP-2009 PG added code to establish correct bounding box for flares
+;    23-SEP-2009 PG investigate issue with events not "open" or "closed" - found
+;                out that we need to change the logic as follows:
+;                a) new event created -> don't create VOEvent
+;                b) after 3 minutes - check if event still on
+;                     - if yes -> create trigger VOEvent
+;                     - if no -> do nothing
+;                c) when event finishes -> create final VOEvent
+;                trigger and final VOEvents are distinguished by
+;                expiration date: 24 hours trigger - 1492 final
+;    24-SEP-2009 PG modified the code to produce "trigger" events and "final"
+;                events. Trigger events are created minflareduration seconds
+;                (default: 3 min) after the start and final events are created
+;                when flares are finished. trigger events are not created if
+;                flare finishes right after minflareduration seconds from the
+;                start
+;    28-SEP-2009 PG changed export of trigger events such that VOEvent struture
+;                (which is modified by export_event) is saved back where it 
+;                belongs
+;    06-Oct-2009 ARD moved program definition to top of file. Need only change
+;                it on one place now.
+;                Merged Ryan's latest updates.
+;    07-Oct-2009 Using latest version of sdcfd_trig_flaredet from latest 
+;                directory, merged changes to object oriented version
+;    15-Oct-2009 PG changed logic that assigns IVORN suffixes such that in case
+;                of a large number of flares starting at the same time, all get
+;                a *unique* suffix
+;    22-Oct-2009 JG merged with latest version (svn revision 22) of 
+;                sdcfd_trig_flaredet.pro
+;    29-OCT-2009 PG making this version run on my system
+;    06-JAN-2010 PG overhauled sdcfd_trig_flaredet wrapper for the object call
+;                now the mode of operation is specified by the new RunMode string
+;                This specifies various way to run the code (normal, construct,
+;                destruct etc.)
+;    02-FEB-2010 PG now uses 2 input/output-filename keywords instead of one
+;                statfile keyword
+;
+;
+;-
+
+COMPILE_OPT idl2
+
+PRO sdcfd_trig_flaredet, filename=imageFilename, $
+                         inputStatusFilename=inputStatusFilename, $
+                         outputStatusFilename=outputStatusFilename, $
+                         error=error, $
+                         RunMode=RunMode, $
+			 verbose=verbose, $	 
+                         VOEventFileDir=VOEventFileDir, $
+                         status=status, $
+                         events=events, $                         
+                         VOEventSpecFile=VOEventSpecFile, $
+                         numActiveEvents=numActiveEvents, $
+                         imageRejected=imageRejected, $
+                         debug=debug, $
+                         _extra=_extra
+
+   ; Some status variables
+   error = ''
+ 
+;some RT additions to test EDS ability to find/respond to timeouts.  
+   ;if RunMode ne 'Construct' then begin
+   ;    pauseCheck = RANDOMU(undef)
+   ;    if pauseCheck lt 0.1 then wait, 15
+   ;endif
+   
+   ;if outputStatusFilename eq '/home/rtimmons/jxtainfra/ModuleStatusFiles/sdcfd_trig_flaredet_1_status_440.sav' then begin
+   ;    while 1 do begin
+   ;   endwhile
+   ;endif
+
+
+
+   ;RunMode controls the mode of operation -default is "Normal"
+   IF n_elements(RunMode) EQ 0 THEN RunMode='Normal'
+
+
+   CASE RunMode OF 
+
+      ;The construction mode is called when a new object needs to be initialized
+      ;In this case it is a clean fresh new object - no knowledge of previous 
+      ;state is known or needed - will pass to the object the parameters for
+      ;the event detection that are read from an xml file
+      'Construct': BEGIN
+
+
+         ; create a flare detect object
+         ; this call the object "INIT" method
+         flare_detect = obj_new ('sdcfd_trig_flaredetective', $
+                            verbose=verbose, $
+                            debug=debug, $
+                            VOEventFileDir=VOEventFileDir, $
+                            VOEventSpecFile=VOEventSpecFile, $
+                            _extra=_extra)
+         
+      END
+
+
+
+      ;Normal mode means that no changes in the internal status of the object
+      ;should be performed other than the normal operation of looking
+      ;at an image and detecting flares. The "status" variable is passed to
+      ;this routine and should be used
+      'Normal' : BEGIN
+
+         ;checks that status is a proper object 
+         IF NOT exist(status) OR size(status, /tname) NE 'OBJREF' THEN BEGIN
+
+            ;if not - we have a problem 
+            error+=' Status variable is not an object. Try to read from file.'
+
+            ;use default input filename if not OK
+            IF n_elements(inputStatusFilename) NE 1 || size(inputStatusFilename,/tname) NE 'STRING' THEN BEGIN 
+               inputStatusFilename = 'sdcfd_trig_flaredet_struct.sav'
+            ENDIF 
+
+            ;try reading from file
+            IF file_exist(inputStatusFilename) THEN BEGIN
+
+               ;file found 
+               ;try restoring flare detect object from file
+               restore, inputStatusFilename
+
+               ;was succesful?
+               IF NOT exist(flare_detect) OR size(flare_detect, /tname) NE 'OBJREF' THEN BEGIN
+                  ;not successful
+                  error+='No valid status (normal) in '+inputStatusFilename
+                  RETURN 
+               ENDIF ;$
+               ;ELSE BEGIN
+                  ;ok - can proceed with good status
+               ;   flare_detect=status
+               ;ENDELSE 
+ 
+            ENDIF $
+            ELSE BEGIN
+               ;if here - no valid save file found
+               error+=" File "+inputStatusFilename+" does not exist. Can't recover status."
+               status=-1
+               RETURN
+            ENDELSE
+            
+         ENDIF $
+         ELSE BEGIN 
+            ;this is the nominal case
+            flare_detect=status
+         ENDELSE 
+
+      END 
+
+      ;This is almost identical to Normal - the difference being that status
+      ;is read from disk instead of being given as input "status" variable
+      'Recovery' : BEGIN
+
+         ;use default filename if not OK
+         IF n_elements(inputStatusFilename) NE 1 || size(inputStatusFilename,/tname) NE 'STRING' THEN BEGIN 
+            statfile = 'sdcfd_trig_flaredet_struct.sav'
+         ENDIF 
+
+         ;try reading from file
+         IF file_exist(inputStatusFilename) THEN BEGIN
+
+            ;file found 
+            ;try restoring flare detect object from file
+            restore, inputStatusFilename
+
+            ;was successful?
+            ;RT - in the sav file it's names 'flare_detect' not 'status'
+            IF NOT exist(flare_detect) OR size(flare_detect, /tname) NE 'OBJREF' THEN BEGIN
+            ;IF NOT exist(status) OR size(status, /tname) NE 'OBJREF' THEN BEGIN
+               ;not successful
+               error+='No valid status (recovery) in '+inputStatusFilename
+               RETURN 
+            ENDIF ;$
+           ; ELSE BEGIN
+               ;this is the nominal case
+               ;ok - can proceed with good status
+           ;    flare_detect=status
+           ; ENDELSE 
+ 
+         ENDIF $
+         ELSE BEGIN
+            ;if here - no valid save file found
+            error+="File "+inputStatusFilename+" does not exist. Can't recover status."
+            status=-1
+            RETURN
+         ENDELSE
+
+      END 
+
+
+  
+      ;The Clear Events mode closes off al currently active flares by returning
+      ;corresponding VOEvents for them. After that the object is left in a state
+      ;where it can continue detect new events if needed - but it will consider
+      ;the next images as the "first" image - i.e. will disregard all knowledge
+      ;of past images - because one of the reasons this may happen is after a data
+      ;gap - so it can't assume old data is still OK
+      'ClearEvents': BEGIN 
+
+
+         ;checks that status is a proper object 
+         IF NOT exist(status) OR size(status, /tname) NE 'OBJREF' THEN BEGIN
+
+            ;if not - we have a problem 
+            error+=' Status variable is not an object. Try to read from file.'
+
+            ;use default filename if not OK
+            IF n_elements(inputStatusFilename) NE 1 || size(inputStatusFilename,/tname) NE 'STRING' THEN BEGIN 
+               inputStatusFilename = 'sdcfd_trig_flaredet_struct.sav'
+            ENDIF 
+
+            ;try reading from file
+            IF file_exist(inputStatusFilename) THEN BEGIN
+
+               ;file found 
+               ;try restoring flare detect object from file
+               restore, inputStatusFilename
+               ;RT - in the sav file it's names 'flare_detect' not 'status'
+               ;was succesful?
+               IF NOT exist(flare_detect) OR size(flare_detect, /tname) NE 'OBJREF' THEN BEGIN
+                  ;not successful
+                  error+='No valid status (clear events) in '+inputStatusFilename
+                  RETURN 
+               ENDIF ;$
+              ; ELSE BEGIN
+                  ;ok - can proceed with good status
+               ;   flare_detect=status
+              ; ENDELSE 
+ 
+            ENDIF $
+            ELSE BEGIN
+               ;if here - no valid save file found
+               error+=" File "+inputStatusFilename+" does not exist. Can't recover status."
+               status=-1
+               RETURN
+            ENDELSE
+            
+         ENDIF $
+         ELSE BEGIN 
+            ;this is the nominal case
+            flare_detect=status
+         ENDELSE 
+
+         
+         IF obj_valid(flare_detect) EQ 0 THEN BEGIN 
+            error+=' No valid object reference available.'
+            ;in this case should not save status as it's not valid anyway
+            RETURN 
+         ENDIF $ 
+         ELSE BEGIN 
+            ; print, 'about to ClearEvents'
+            error+= (flare_detect->ClearEvents(pEvents=pEvents))
+             if ptr_valid(pEvents) then begin 
+                 events = *pEvents
+             endif
+             
+             ;print, 'events from ClearEvents'
+             ;print, events
+         ENDELSE 
+
+      END 
+
+      ;This only serves to gently destroy the object to prevent memory leaks
+      ;*** need to call CleanEvents first? ****
+      'Destruct': BEGIN
+         
+
+         ;checks that status is a proper object 
+         IF NOT exist(status) OR size(status, /tname) NE 'OBJREF' THEN BEGIN
+
+            ;if not - we have a problem 
+            error+=' Status variable is not an object. Try to read from file.'
+
+            ;use default filename if not OK
+            IF n_elements(inputStatusFilename) NE 1 || size(inputStatusFilename,/tname) NE 'STRING' THEN BEGIN 
+               statfile = 'sdcfd_trig_flaredet_struct.sav'
+            ENDIF 
+
+            ;try reading from file
+            IF file_exist(inputStatusFilename) THEN BEGIN
+
+               ;file found 
+               ;try restoring flare detect object from file
+               restore, inputStatusFilename
+
+               ;was succesful?
+               IF NOT exist(flare_detect) OR size(flare_detect, /tname) NE 'OBJREF' THEN BEGIN
+                  ;not successful
+                  error+='No valid status (destruct) in '+inputStatusFilename
+                  RETURN 
+              ENDIF; $
+              ; ELSE BEGIN
+               ;   ;ok - can proceed with good status
+              ;    flare_detect=status
+              ; ENDELSE 
+ 
+            ENDIF $
+            ELSE BEGIN
+               ;if here - no valid save file found
+               error+=" File "+inputStatusFilename+" does not exist. Can't recover status."
+               status=-1
+               RETURN
+            ENDELSE
+            
+         ENDIF $
+         ELSE BEGIN 
+            ;this is the nominal case
+            flare_detect=status
+         ENDELSE 
+
+
+         ;destructor invocation
+         ;sets status to -1 after destruction
+
+         status=-1
+         obj_destroy,flare_detect
+
+         ;
+         ;need to save status????
+         ;
+         RETURN
+      END 
+
+      ;*** what to do if RunMode not recognized???
+      ELSE : BEGIN
+         error+=' Invalid RunMode.'
+         RETURN
+      END 
+   ENDCASE 
+
+   
+; detect flares 
+
+   IF obj_valid(flare_detect) EQ 0 THEN BEGIN 
+      error+=' No valid object reference available.'
+      ;in this case should not save status as it's not valid anyway
+      RETURN 
+   ENDIF $ 
+   ELSE BEGIN 
+      error+=flare_detect->Run (imageFilename,events=events, numActiveEvents=numActiveEvents, imageRejected=imageRejected)
+   ENDELSE 
+
+   ;IF verbose GT 2 THEN 
+   if strlen(error) gt 2 then print,'Error message: '+error
+
+   
+   ;flare_detect->printStatus
+
+
+   ; save flare detect object to file
+   save, filename=outputStatusFilename, flare_detect
+
+   ; set status to flare_detect object
+   status = flare_detect
+
+end

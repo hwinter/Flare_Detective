@@ -1,0 +1,9 @@
+Note: The regression test is currently set to point to the libraries accessible on the Mac cluster (e.g., sdo1). From other systems, you may need to update the 
+library directories defined at the beginning of regtest.script.
+
+To execute the regression test, execute the following while in the 
+regression/bin directory:
+
+./regtest.script
+
+This script will automatically run the regression test, compare the results and provide a report on the comparison.

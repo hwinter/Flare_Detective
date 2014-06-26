@@ -1,0 +1,156 @@
+;+
+; NAME:
+;      pg_plotspextrum
+;
+; PURPOSE: 
+;      plot a spectrum from an input spex_structure
+;
+; INPUTS:
+;      spst: spex structure, defined as:
+;  spex_st = {xselect:xselect, apar_arr:apar_arr, apar_sigma:apar_sigma $
+;  ,chi:chi, convi:convi, obsi:obsi, eobsi:eobsi, backi :backi, ebacki:ebacki $
+;  ,f_model:f_model, free: free, erange:erange, tb:tb, ut:ut $
+;  ,iselect:iselect, date:anytim(uts,/date_only), edges:edges, apar:apar $
+;  ,ifirst:ifirst, ilast:ilast, epivot:epivot, back_order:back_order}
+;
+; 
+;  
+; OUTPUTS:
+;      none
+;      
+; KEYWORDS:
+;      n_spec: in case of multiple spectra, choose the one to plot
+;              0 or greater--> number  
+;              undefined : take ifirst
+;              -1 : there is only one spectrum (use apar instead
+;              of apar_arr)
+;      xlog,ylog: if set to 0 inhibits the log plot (which is default)
+;      psym: is ignored
+;      modthick: thickness of model lines (2 is default)
+;
+; HISTORY:
+;       23-OCT-2003 written
+;       05-NOV-2003 made more general in scope
+;       19-NOV-2003 improved, now works on a different concept...
+;
+; TO_DO: -- update documentation, polish up
+;        -- future: let it works for arbitrary model... (->taking
+;           input from spec model_component.pro)
+;
+; AUTHOR
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;
+;-
+
+PRO pg_plotspextrum, spst,n_spec= n_spec, xlog=xlog, ylog=ylog,psym=psym $
+                   , modthick=modthick, modcolor=modcolor, modstyle=modstyle $
+                   , color=color, spthick=spthick, xtitle=xtitle $
+                   , ytitle=ytitle, overplot=overplot, histo=histo $
+                   , nodata=nodata, erebin=erebin, nrebin=nrebin $
+                   , modlinestyle=modlinestyle,_extra=_extra
+
+
+
+xlog=fcheck(xlog,1)
+ylog=fcheck(ylog,1)
+xtitle=fcheck(xtitle,'Energy (keV)')
+ytitle=fcheck(ytitle,'Photon flux (photons s!A-1!N cm!A-2!N keV!A-1!N)')
+modthick=fcheck(modthick,2)
+modcolor=fcheck(modcolor,[7,5,4,12,1,8,9,11,10])
+modstyle=fcheck(modstyle,0)
+modlinestyle=fcheck(modlinestyle,replicate(modstyle,10))
+
+psym=3
+
+IF n_elements(n_spec) LT 1 THEN n_spec=spst.ifirst
+
+IF n_spec LT 0 THEN BEGIN
+    useapar=1
+    n_spec=0
+    ENDIF $
+ELSE useapar=0
+
+;selected_interval=spst.xselect[*,n_spec]+anytim(spst.date)
+
+
+edge_products,spst.edges,mean=energybins,edges_2=energyedges
+IF keyword_set(erebin) AND keyword_set(nrebin) THEN BEGIN
+
+    energyedges_rebin=pg_edges_rebin(energyedges,erebin,nrebin)
+    edge_products,energyedges_rebin,mean=energybins
+
+    IF NOT keyword_set(nodata) THEN BEGIN
+        phflux = (spst.obsi[*,n_spec]-spst.backi[*,n_spec])/spst.convi[*,n_spec]
+
+        errflux = sqrt(spst.eobsi[*,n_spec]^2 + spst.ebacki[*,n_spec]^2)/spst.convi[*,n_spec]
+
+        phflux=pg_rebin(energyedges,phflux,energyedges_rebin)
+        errflux=pg_rebin(energyedges,errflux,energyedges_rebin)
+
+    energyedges=energyedges_rebin
+    
+    ENDIF
+   
+ENDIF ELSE $
+IF NOT keyword_set(nodata) THEN BEGIN
+phflux = (spst.obsi[*,n_spec]-spst.backi[*,n_spec])/spst.convi[*,n_spec]
+
+errflux = sqrt(spst.eobsi[*,n_spec]^2 + spst.ebacki[*,n_spec]^2)/spst.convi[*,n_spec]
+ENDIF
+
+
+;known models with set of parameter to plot in different colors
+;for each color, used apar= apar*mask[*,model_index]
+; ptrmodpar=ptrarr(2)
+
+
+IF keyword_set(histo) THEN psym=10.
+
+IF NOT((keyword_set(overplot)) OR (keyword_set(nodata))) THEN $
+  plot, energybins, phflux[*],xlog=xlog,ylog=ylog,psym=psym,color=color $
+                             ,xtitle=xtitle,ytitle=ytitle,_extra=_extra
+
+
+
+
+;model: f_multi_spec
+IF (NOT keyword_set(overplot)) AND keyword_set(nodata) THEN $
+  plot,  energybins, f_multi_spec(energyedges, [spst.apar_arr[0,n_spec], spst.apar_arr[1,n_spec], 0, 1, 0, 0, 0, 0, 0, 0]), color = modcolor[0],thick=modthick,linestyle=modlinestyle[0],xlog=xlog,ylog=ylog,psym=psym $
+                             ,xtitle=xtitle,ytitle=ytitle,_extra=_extra $
+ELSE $
+  oplot,  energybins, f_multi_spec(energyedges, [spst.apar_arr[0,n_spec], spst.apar_arr[1,n_spec], 0, 1, 0, 0, 0, 0, 0, 0]), color = modcolor[0],thick=modthick,linestyle=modlinestyle[0]
+
+;second temperature
+;oplot,  energybins, f_multi_spec(energyedges, [ 0, 1, spst.apar_arr[2:3,n_spec], 0, 0, 0, 0]), color = modcolor[1]
+
+oplot,  energybins, f_multi_spec(energyedges, [ 0, 1, 0, 1, spst.apar_arr[4:9,n_spec]]), color = modcolor[2],thick=modthick,linestyle=modlinestyle[2]
+
+
+oplot, energybins, f_multi_spec(energyedges, spst.apar_arr[*,n_spec]), color = modcolor[3],thick=modthick,linestyle=modlinestyle[3]
+
+IF NOT keyword_set(nodata) THEN BEGIN 
+
+    for i = 0, n_elements(phflux)-1 do $
+      oplot, energyedges[*, i], [phflux[i], phflux[i]],color=color,thick=spthick
+
+    for i = 0, n_elements(phflux)-1 do $
+      oplot, [energybins[i], energybins[i]], [phflux[i], phflux[i]+errflux[i]],color=color,thick=spthick
+    
+    for i = 0, n_elements(phflux)-1 do $
+      oplot, [energybins[i], energybins[i]], [phflux[i], (phflux[i]-errflux[i]) > (machar()).xmin],color=color,thick=spthick
+
+ENDIF
+
+
+END
+
+
+
+
+
+
+
+
+
+
+

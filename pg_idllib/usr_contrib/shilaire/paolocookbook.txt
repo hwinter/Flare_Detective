@@ -1,0 +1,91 @@
+PRINT,hsi_dec_chan2en([100,1000],time_intv='2003/10/24 '+['02:45','02:50'])
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;SPEX:
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
+;second fit: apar:
+;0.0253680     0.928518      1.90348      1.70122      7.13515      6.75210 
+;
+;photons=(obsi-backi)/conversion
+;ephotons=eobsi/conversion
+;ebackground=ebacki/conversion
+;idl,save,photons,filename='~/work/mfl3/photons.dat'
+;idl,save,ephotons,filename='~/work/mfl3/ephotons.dat'
+;idl,save,ebackground,filename='~/work/mfl3/ebackground.dat'
+;idl,save,apar,filename='~/work/mfl3/apar.dat'
+;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;BACKGROUND FOR DIFFERENT E-bands
+
+back_order,0,0,0,2,2
+use_band=-1
+background
+
+
+use_band=0
+background
+use_band=1
+background
+use_band=2
+background
+use_band=3
+background
+
+idl,plot,total(flux[0:8,*],1),/ylog,/xst,yrange=[1e-4,1e4]
+idl,oplot,total(back[0:8,*],1),COLOR=2
+
+idl,plot,total(flux[9:21,*],1),/ylog,/xst,yrange=[1e-4,1e4]
+idl,oplot,total(back[9:21,*],1),COLOR=2
+
+idl,plot,total(flux[22:46,*],1),/xst,YRANGE=[0,1]
+idl,oplot,total(back[22:46,*],1),COLOR=2
+
+idl,plot,total(flux[47:96,*],1),/xst,YRANGE=[0,1]
+idl,oplot,total(back[47:96,*],1),COLOR=2
+
+;-----------------------------------------------------------------------------------
+This should automatically get the right energy band boundaries...
+
+;find boundaries for the energy_bands
+idl,band1=where((edges GE energy_bands[0]) AND (edges LE energy_bands[1]))
+b10=(1+min(band1))/2
+b11=max(band1)/2-1
+idl,band2=where((edges GE energy_bands[2]) AND (edges LE energy_bands[3]))
+b20=(1+min(band2))/2
+b21=max(band2)/2-1
+idl,band3=where((edges GE energy_bands[4]) AND (edges LE energy_bands[5]))
+b30=(1+min(band3))/2
+b31=max(band3)/2-1
+idl,band4=where((edges GE energy_bands[6]) AND (edges LE energy_bands[7]))
+b40=(1+min(band4))/2
+b41=max(band4)/2-1
+
+;check if background is ok
+idl,plot,total(flux[b10:b11,*],1),ylog=1,/yst,/xst,yrange=[1e-2,10]
+idl,oplot,total(back[b10:b11,*],1),COLOR=2
+
+idl,plot,total(flux[b20:b21,*],1),ylog=1,/xst,/yst,yrange=[1e-2,10]
+idl,oplot,total(back[b20:b21,*],1),COLOR=2
+
+idl,plot,total(flux[b30:b31,*],1),/xst,ylog=0,YRANGE=[1e-2,2.]
+idl,oplot,total(back[b30:b31,*],1),COLOR=2
+
+idl,plot,total(flux[b40:b41,*],1),/xst,YRANGE=[0.01,1],ylog=0
+idl,oplot,total(back[b40:b41,*],1),COLOR=2
+;-----------------------------------------------------------------------------------
+pg_save_fit_result,'tmp.fits',/CREATE
+
+d='SEARCH_for_Ecoto/20031022/'
+f1=d+'hsi_spectrum_20031022_150630.fits'
+f2=d+'hsi_srm_20031022_150630.fits'
+f3=d+'fit_results.fits'
+pg_setup_spex,f1,f2,mrdfits(f3,1)
+spex_proc
+th_ytype,1
+th_yrange,1e-4,1e2
+graph
+;-----------------------------------------------------------------------------------
+
+

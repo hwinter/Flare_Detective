@@ -1,0 +1,127 @@
+;+
+; NAME:
+;
+; pg_findrhessiflares
+;
+; PURPOSE:
+;
+; find all RHESSI observed flares, in a certain time interval, which have a
+; GOES soft X-ray class larger than a given threshold
+;
+; CATEGORY:
+;
+; RHESSI util
+;
+; CALLING SEQUENCE:
+;
+; result=pg_findrhessiflares(time_intv,goes_threshold=goes_threshold)
+;
+; INPUTS:
+;
+; time_intv: a time interval, in any format accepetd by anytim
+;
+; OPTIONAL INPUTS:
+;
+; goes_threshold: returns only flares above this flux 9default: M1)
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+; result: a list of time_intervals for the flares
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; MODIFICATION HISTORY:
+;
+;-
+
+;.comp pg_findrhessiflares
+
+FUNCTION pg_findrhessiflares,time_intv,goes_threshold=goes_threshold $
+                            ,verbose=verbose
+
+IF NOT exist(time_intv) THEN BEGIN 
+   print,'Please input a time interval'
+   RETURN,-1
+ENDIF
+
+goes_threshold=fcheck(goes_threshold,1d-5)
+
+
+;read flare list
+;time_intv=['24-FEB-2002','26-FEB-2002']
+data=hsi_select_flare(time_range=time_intv,/st)
+
+
+goesclass=dblarr(n_elements(data))
+goesob=obj_new('goes')               ;-- create a GOES lightcurve object
+
+FOR i=0L,n_elements(data)-1 DO BEGIN 
+
+    goes_time_intv=anytim([data[i].start_time,data[i].end_time],/yohkoh)
+
+    goesob->set,tstart=goes_time_intv[0],tend=goes_time_intv[1]
+    goesob->set,sat='goes12',sdac=0
+    gdata=goesob->getdata(/three,/struct,/quiet)
+    
+    IF size(gdata,/type) EQ 8 THEN $
+      goesclass[i]=max(gdata.yclean[*,0]) $
+    ELSE goesclass[i]=0.
+
+    IF keyword_set(verbose) THEN $
+       print,'Now doing flare number '+strtrim(string(i),2)+ $
+             ' (in flare list '+strtrim(string(data[i].id_number),2)+')' $
+             +' GOES CLASS: '+togoes(goesclass[i])
+
+
+ENDFOR
+
+ind=where(goesclass GE goes_threshold,count)
+
+IF count GT 0 THEN BEGIN 
+
+   result=dblarr(2,count)
+   result[0,*]=data[ind].start_time
+   result[1,*]=data[ind].end_time
+
+   goesclasslist=goesclass[ind]
+
+   xpos=data[ind].x_position
+   ypos=data[ind].y_position
+
+   answer={time_intv:result,goessize:goesclasslist,xpos:xpos,ypos:ypos}
+
+ENDIF $
+ELSE BEGIN 
+   answer=-1
+ENDELSE
+
+
+RETURN,answer
+
+END

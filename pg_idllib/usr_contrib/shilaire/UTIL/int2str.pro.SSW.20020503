@@ -1,0 +1,40 @@
+;+
+;NAME:
+; 	int2str.pro
+;PROJECT:
+; 	ETHZ Radio Astronomy
+;CATEGORY:
+; 	gen
+;PURPOSE:
+; This routine will return a string representation of an interger. This
+; string has a length 'len'. Empty spaces on the left are filled up with 
+; zeros. Very useful for filenaming.
+;
+;CALLING SEQUENCE:
+;	res=int2str(nbr,length)
+;
+;INPUT:
+;	nbr    : an integer
+;	len	  : an integer
+;
+;OUTPUT:
+;	a string representation of 'nbr', of length 'len'
+;
+;EXAMPLES:
+;	IDL> text=int2str(123,5)
+;	IDL> print,text
+;	00123
+;
+;	IDL> for i=0,N_ELEMENTS(imgarr(0,0,*))-1 DO WRITE_GIF,'Img_'+int2str(i,4)+'.gif',imgarr(*,*,i),r,g,b
+;
+;HISTORY:
+;
+;	2001/02/24 created. Pascal Saint-Hilaire [shilaire@astro.phys.ethz.ch]
+;
+;-
+
+function int2str,value,length
+	bla=strtrim(value,2)
+	while strlen(bla) lt length do bla='0'+bla
+	return, bla
+end

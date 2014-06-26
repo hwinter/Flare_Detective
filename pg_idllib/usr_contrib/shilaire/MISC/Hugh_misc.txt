@@ -1,0 +1,16 @@
+IDL> read_gif,filename,data,r,g,b
+
+IDL> pr_gev,'25-aug'
+
+IDL> rd_xda,infil,-1,index,data
+IDL> cts = ave_cts(index,data,time=time)
+IDL> utplot, time, cts(0,*,*), index(0)
+should make a basic plot if infil = "hda920221.0225" for example.
+
+
+
+
+There is a whole suite of programs of the form "gt_", as in
+print, gt_expdur(index) shows the exposure durations in msec.
+
+

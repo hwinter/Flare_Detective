@@ -1,0 +1,94 @@
+;+
+; NAME:
+;
+; pg_align2im
+;
+; PURPOSE:
+;
+; returns the shift between two images
+;
+; CATEGORY:
+;
+;
+;
+; CALLING SEQUENCE:
+;
+; xyoffset=pg_align2im(im1,im2,nsquare=nsquare)
+;
+; INPUTS:
+;
+;  im1,im2: two 2-dimensional images
+;
+; OPTIONAL INPUTS:
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+; xyoffset= array of two elements, the x and y offset in pixels between the
+;           images. This is the offset of the second image relative to the first.
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; AUTHOR:
+;
+; Paolo Grigis, pgrigis@cfa.harvard.edu
+; 
+; MODIFICATION HISTORY:
+;
+;-
+
+
+FUNCTION pg_align2im,im1,im2,nsquare=nsquare
+
+  IF n_elements(nsquare) EQ 0 THEN nsquare=2
+
+  s1=size(im1)
+  s2=size(im2)
+
+  IF s1[0] NE 2 OR s2[0] NE 2 THEN BEGIN 
+     print,'Invalid input'
+     return,[!values.f_nan,!values.f_nan]
+  ENDIF
+
+  IF total(abs(s1[1:2]-s2[1:2])) NE 0 THEN BEGIN 
+     print,'Invalid input'
+     return,[!values.f_nan,!values.f_nan]
+  ENDIF
+
+  cc=pg_2dimfftcorr(im1,im2,/norm) 
+  xyoffset=pg_fit2dimparpeak(cc,nsquare=nsquare)-[s1[1]/2,s1[2]/2]
+
+  RETURN,xyoffset
+
+END
+
+
+
+

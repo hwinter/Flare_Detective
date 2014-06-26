@@ -1,0 +1,70 @@
+;+
+; NAME:
+;
+;   pg_getrelativeplotpos
+;
+; PURPOSE:
+;
+;   returns the position of a plot in normalized coordinates, given a relative
+;   position and two plot coordinates i,j out of n row and m columns
+;
+; CATEGORY:
+;
+;   plot util
+;
+; CALLING SEQUENCE:
+;
+;
+;
+; INPUTS:
+;
+;
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; AUTHOR:
+;
+;   Paolo Grigis (pgrigis@astro.phys.ethz.ch)
+;
+;-
+
+FUNCTION pg_getrelativeplotpos,relpos,i=i,j=j,n=n,m=m,
+
+END
+
+
+

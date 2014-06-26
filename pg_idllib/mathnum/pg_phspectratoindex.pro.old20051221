@@ -1,0 +1,99 @@
+;+
+;
+; NAME:
+;        pg_phspectratoindex
+;
+; PURPOSE: 
+;        convert photon spectra from simulation to spectral indices
+;        and fluxes
+;
+; CALLING SEQUENCE:
+;
+;        pg_phspectratoindex,resfile
+;
+; INPUTS:
+;
+;        phspectra: the structure produced by pg_convertelres2photsp
+;        emin: minimal energy for the fitting (all energies in keV)
+;        emax: maximal energy for the fitting
+;        enorm: reference energy for fnorm
+;
+; KEYWORDS:
+;
+;        
+;
+; OUTPUT:
+;        a structure, containing fit parameters, spectral indices etc. 
+;
+; EXAMPLE:
+;
+;        
+;
+; VERSION:
+;
+;        25-OCT-2005 written Paolo Grigis
+;        15-NOV-2005 finalized PG; TO DO --> get spindices thin/thick!
+;        
+;
+; AUTHOR
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;       pgrigis@astro.phys.ethz.ch
+;-
+
+FUNCTION pg_phspectratoindex,phspectra,emin=emin,emax=emax,enorm=enorm
+
+emin=fcheck(emin,20.)
+emax=fcheck(emax,50.)
+enorm=fcheck(enorm,35.)
+enormlog=alog(enorm)
+
+
+s=size(phspectra.phspectra_thin)
+
+nsp=s[2]
+
+en=phspectra.energy_kev
+
+ind=where(en GE emin AND en LE emax,count)
+
+IF count EQ 0 THEN BEGIN
+   print,'Please input a valid energy range!'
+   RETURN,-1
+ENDIF
+
+res={spindex_thin:dblarr(nsp) ,fnorm_thin:dblarr(nsp),  $
+     spindex_thick:dblarr(nsp),fnorm_thick:dblarr(nsp), $
+     emin:emin,emax:emax,enorm:enorm,simpar:phspectra.simpar, $
+     thinpar:phspectra.thinpar,thickpar:phspectra.thickpar}
+
+x=en[ind]
+
+FOR i=0,nsp-1 DO BEGIN 
+   ythin=phspectra.phspectra_thin[ind,i]
+   ythick=phspectra.phspectra_thick[ind,i]
+
+   xlog=alog(x)
+   ylogthin=alog(ythin)
+   ylogthick=alog(ythick)
+
+   sixlin,xlog,ylogthin,athin,sigathin,bthin,sigbthin
+   sixlin,xlog,ylogthick,athick,sigathick,bthick,sigbthick
+
+   fnormthin=exp(athin[0])*exp(bthin[0]*enormlog)
+   spindexthin=-bthin[0]
+
+   fnormthick=exp(athick[0])*exp(bthick[0]*enormlog)
+   spindexthick=-bthick[0]
+
+   res.spindex_thin[i]=spindexthin
+   res.fnorm_thin[i]=fnormthin
+
+   res.spindex_thick[i]=spindexthick
+   res.fnorm_thick[i]=fnormthick
+
+ENDFOR
+
+RETURN,res
+
+END
+

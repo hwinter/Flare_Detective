@@ -1,0 +1,80 @@
+;+
+;
+; NAME:
+;        log_thermal_bpow
+;
+; PURPOSE: 
+;        returns an emission spectrum for a thermal + powerlaw model
+;        in logarithmic units or normal units
+;
+; CALLING SEQUENCE:
+;
+;        spectrum=lof_thermal_bpow(energy,par [,nolog=nolog])
+;
+; INPUTS:
+;
+;        energy: array N of average energy values 
+;
+;        par: par[0]: emission measure in units of 10^49 cm-3
+;             par[1]: plasma temperature in keV
+;
+;             par[2]: negative slope of power law
+;             par[3]: power law value at 1 keV 
+;
+;             par[4]: low_energy cutoff
+;             par[5]: negative slope at e < cutoff
+;
+; KEYWORDS:
+;        log: return the logarithm of the spectrum
+;        noline: output the spectrum without lines
+;
+; OUTPUT:
+;        spectrum: the logarithm of the spectrum
+;        
+; EXAMPLE:
+;        energy=findgen(1000)/10+3.
+;        par=[1e-2,1.5,4,1e5,60,2]
+;        spectrum=log_thermal_bpow(energy,par)
+;        plot,energy,spectrum,/xlog,/ylog,/xstyle
+; 
+; VERSION:
+;
+;        22-JUL-2003 written
+;        
+;
+; AUTHOR
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;-
+
+
+;.comp log_thermal_bpow.pro
+
+FUNCTION log_thermal_bpow,energy,par,log=log,noline=noline;,verbose=verbose
+
+energy_edges=edge_transform(energy)
+
+; IF keyword_set(verbose) THEN BEGIN
+; print,energy_edges
+; print,'par',[par[0],par[1]]
+; print,'noline',noline
+; ENDIF
+
+thermalflux=f_vth(energy_edges,[par[0],par[1]],noline=noline)
+
+powerlaw=par[3]*energy^(-par[2])
+
+ind=where(energy LE par[4],count)
+
+IF count GT 0 THEN powerlaw[ind]=(par[3]*par[4]^(par[5]-par[2]))* $
+                                 (energy[ind])^(-par[5])
+
+spectrum=powerlaw+thermalflux
+
+IF keyword_set(log) THEN $
+    RETURN, alog(spectrum) $
+ELSE $
+    RETURN, spectrum
+
+
+END
+

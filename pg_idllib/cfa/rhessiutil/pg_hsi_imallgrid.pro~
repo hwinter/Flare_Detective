@@ -1,0 +1,66 @@
+;+
+; NAME:
+;
+; pg_hsi_imallgrid
+;
+; PURPOSE:
+;
+; produces a nice plot of all single grid back projection RHESSI images
+;
+; CATEGORY:
+;
+; RHESSI util
+;
+; CALLING SEQUENCE:
+;
+; pg_hsi_imallgrid
+;
+; INPUTS:
+;
+;
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+; AUTHOR:
+;
+; Paolo Grigis, CfA
+; pgrigis@cfa.harvard.edu
+;
+; MODIFICATION HISTORY:
+;
+;
+;
+;-

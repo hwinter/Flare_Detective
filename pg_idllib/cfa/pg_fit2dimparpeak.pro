@@ -1,0 +1,182 @@
+;+
+; NAME:
+;
+;  pg_fit2dimparpeak
+;
+; PURPOSE:
+;
+;  Fits the position of the maximum of a 2-dimensional array by computing the
+;  maximum of a parabolic function in a square of size NxN around the
+;  maximum. Uses the SVD pseudoinverse, so it is really fast. The pseudoinverse
+;  can be given as an input, or computed here anbd then reused in subsequent
+;  calls to this program.
+;
+; CATEGORY:
+;
+;  peak finding utils
+;
+; CALLING SEQUENCE:
+;
+;  xypos=pg_fit2dimparpeak(m, nsquare=nsquare,pseudoinverse=pseudoinverse,force=force)
+;
+; INPUTS:
+;
+;  m: the 2-dimensional array whose peak need to be fitted
+;
+;  either nsquare or pseudoinverse are mandatory inputs
+;
+;  nsquare: dimension of the square area around the peak that needs to be fitted
+;           (minimum is 1). The area is 2*nsquare+1 by 2*nsquare+1 pixels. Larger values
+;           of nsquare help fighting noise, but may deliver poor fit if the underlying
+;           distribution is not well represented by a parabolic function.
+;
+;  pseudoinverse: the nsquare by nsquare pseudoinverse. If this routineneeds to
+;                 be called multiple times with constant nsquare, than it is
+;                 enough to compute the pseudoinverse once and in successive
+;                 calls pseudoinverse will not have o be recomputed.
+;
+; OPTIONAL INPUTS:
+;
+;  force: if set, force the computation of the pseudoinverse. nsquare is needed
+;         in that case.
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;  
+;  Find the position of the max of the array. Minimizes |Ax-b|, where b are the
+;  input array values, x are the coefficient of the parabolic surface, and A is
+;  the 2-dimensional equivalent of a Vandermonde array.
+;
+; EXAMPLE:
+;
+;  ;generates 2-dim Gaussian
+;  n=100
+;  x=findgen(n)/(n-1)*10-5
+;  y=x
+;  xx=x#(x*0+1)
+;  yy=(y*0+1)#y
+;  zz=exp(-(xx-2.2)^2-(yy-1.3)^2)
+;
+;  d=pg_fit2dimparpeak(zz,nsquare=2,pseudoinverse=p,/force)
+;  print,interpol(x,findgen(n),d[0])
+;  print,interpol(y,findgen(n),d[1])
+;
+;
+; AUTHOR:
+;
+;  Paolo Grigis, CfA
+;  pgrigis@cfa.harvard.edu
+;
+; MODIFICATION HISTORY:
+;
+;  27-MAR-2008 written PG
+;  31-MAR-2008 updated documentation PG
+;  25-AUG-2008 corrected bug for the case of non-quadratic arrays PG
+;
+;-
+
+FUNCTION pg_fit2dimparpeak,m,nsquare=nsquare,pseudoinverse=pseudoinverse,force=force
+
+sm=size(m)
+
+IF keyword_set(force) THEN pseudoinverse=0
+
+sp=size(pseudoinverse)
+
+IF sp[0] NE 2 THEN BEGIN 
+   dopseudocomp=1 
+   IF n_elements(nsquare) EQ 0 THEN nsquare=1L ELSE nsquare=nsquare>1L
+ENDIF $
+ELSE BEGIN 
+   dopseudocomp=0
+   ndoub=round(sqrt(sp[1]))
+   IF (ndoub MOD 2) NE 1 THEN BEGIN
+      print,'Invalid pseudoinverse! Try recomputing it setting the /force keyword.'
+      RETURN,[!values.f_nan,!values.f_nan]
+   ENDIF
+   nsquare=ndoub/2
+ENDELSE
+
+ndoub=2*nsquare+1
+
+IF dopseudocomp THEN BEGIN 
+
+   ;compute vandermonde array
+   vandermonde=dblarr(6,ndoub^2)
+
+   x=dindgen(ndoub)-nsquare 
+   y=x
+
+   FOR j=0L,ndoub-1 DO BEGIN
+      FOR i=0L,ndoub-1 DO BEGIN 
+         ; the quadratic model is given by the quartic function
+         ; z(x,y)=a*x^2+b*x*y+c*y^2+d*x+e*y+f
+         vandermonde[*,j*ndoub+i]=[x[i]*x[i],x[i]*y[j],y[j]*y[j],x[i],y[j],1]
+      ENDFOR
+   ENDFOR
+
+   ;compute pseudoinverse from SVD
+   svdc,vandermonde,w,u,v
+
+   nw=n_elements(w)
+   sv = FLTARR(nw, nw)  
+   FOR K = 0, nw-1 DO sv[k,k] = 1d / w[k]  
+   pseudoinverse = v ## sv ## transpose(u)  
+
+ENDIF
+
+
+dummy=max(m,ind)
+xind=(ind MOD sm[1])>(nsquare)<(sm[1]-nsquare-1)
+yind=(ind/sm[1])>(nsquare)<(sm[2]-nsquare-1)
+
+
+fitareaval=m[xind-nsquare:xind+nsquare,yind-nsquare:yind+nsquare]
+
+parabcoeff=pseudoinverse##reform(fitareaval,ndoub^2)
+
+;the quadratic model is given by the quartic function
+; z(x,y)=a*x^2+b*x*y+c*y^2+d*x+e*y+f
+
+a=parabcoeff[0]
+b=parabcoeff[1]
+c=parabcoeff[2]
+d=parabcoeff[3]
+e=parabcoeff[4]
+
+det=4*a*c-b*b
+
+IF det EQ 0. THEN RETURN,[!values.f_nan,!values.f_nan]
+
+xres=(b*e-2*c*d)/det
+yres=(b*d-2*a*e)/det
+
+RETURN,[xind+xres,yind+yres]
+
+END
+
+
+

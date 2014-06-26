@@ -1,0 +1,7 @@
+add_path,'/global/hercules/data3/rag/work/idl',/EXPAND
+
+dir='/global/hercules/data3/rag/observations/2002/11/01/'
+filename=FindFile(strtrim(dir+'/*i.fit*'))
+
+quickview,filename=filename,/events,plot_dev='ps'
+

@@ -1,0 +1,140 @@
+;+
+; NAME:
+; 
+;   pg_2dimfftcorr
+;
+; PURPOSE:
+;
+;   computes the two dimensional cross correlation of two matrices a and b.
+;   a and be *must* have the same number of rows and columns
+;
+; CATEGORY:
+;
+;   image proceesing
+;
+; CALLING SEQUENCE:
+;
+;   corrmat=pg_2dimfftcorr(a,b)
+;
+; INPUTS:
+; 
+;   a,b: the two matrices to cross correlate (the operation is called
+;        auto-correlation if a=b)
+; 
+; OPTIONAL INPUTS:
+;
+;   None
+;
+; KEYWORD PARAMETERS:
+;
+;   NORMALIZE:   if set, the normalized cross-correlation is returned. This is a
+;                number between 1 and -1.
+;   CONVOLUTION: if set, the convolution of a and b is returned rather than the
+;                cross correlation.
+; 
+; OUTPUTS:
+;
+;   corrmat: the correlation matrix. The correlation coefficients are sorted
+;   according to the following rule. Let nx and ny be the numbers of columns and
+;   rows of the matrices a and b. Then the correlation lag 0,0 is found at
+;   position nx/2 and ny/2. Increasing lag in x and y direction is found for
+;   larger values of the output array indices. In other words, the cross
+;   correlation with lag lx,ly is found in corrmat[nx/2+lx,ny/2+ly].
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;   Use the FFT <-> cross-correlation & convolution theorems. 
+;   FFT(cross_correlation(a,b))=complex_conj(FFT(a))*FFT(b)
+;   FFT(convolution(a,b))      =             FFT(a) *FFT(b)
+;   See also Fourier Analysis and Imaging, R. N. Bracewell, Kluwer 2003
+;
+; EXAMPLE:
+;
+;   a=dist(3,3) & b=shift(a,-1,-1)
+;   c=pg_2dimfftcorr(a,b)
+;   print,a,' ',b,' ',c
+;
+; AUTHOR:
+; 
+;  Paolo Grigis, pgrigis@cfa.harvard.edu
+;
+; MODIFICATION HISTORY:
+;
+;  26-MAR-2008 written PG
+;  31-MAR-2008 improved documentation and fixed behaviour for constant arrays input
+;-
+
+FUNCTION pg_2dimfftcorr,ain,bin,normalize=normalize,convolution=convolution,error=error
+
+  error=0
+
+  n=n_elements(ain)
+
+  sa=size(ain)
+  sb=size(bin)
+  
+  IF (sa[0] NE 2) OR (sb[0] NE 2) THEN BEGIN 
+     error=1
+     print,'Error: invalid input. Please input two 2-dimensional matrices. Returning.'
+     RETURN,-1
+  ENDIF
+
+  IF (sa[1] NE sb[1]) OR (sa[2] NE sb[2]) THEN BEGIN 
+     error=1
+     print,'Error: invalid input. The input matrices must have the same dimensions. Returning.'
+     RETURN,-1
+  ENDIF
+
+  IF keyword_set(normalize) THEN BEGIN 
+     a=ain-mean(ain)
+     b=bin-mean(bin)
+  ENDIF ELSE BEGIN 
+     a=ain
+     b=bin
+  ENDELSE
+
+  IF keyword_set(convolution) THEN $
+     c=float(fft(fft(a,-1)*fft(b,-1),1))*n $
+  ELSE $
+     c=float(fft(conj(fft(a,-1))*fft(b,-1),1))*n
+
+  IF keyword_set(normalize) THEN BEGIN 
+     normfactora=total(a*a)
+     normfactorb=total(b*b)
+     ;avoid division by zero
+     IF (normfactora EQ 0) AND (normfactorb EQ 0) THEN RETURN,c*0+1
+     IF (normfactora EQ 0) XOR (normfactorb EQ 0) THEN RETURN,c*0
+     IF keyword_set(convolution) THEN BEGIN 
+        RETURN,shift(c,sa[1]/2+1,sa[2]/2+1)/sqrt(normfactora*normfactorb) 
+     ENDIF
+     RETURN,shift(c,sa[1]/2,sa[2]/2)/sqrt(normfactora*normfactorb) 
+  ENDIF $
+  ELSE BEGIN 
+     IF keyword_set(convolution) THEN BEGIN 
+        RETURN,shift(c,sa[1]/2+1,sa[2]/2+1)
+     ENDIF
+     RETURN,shift(c,sa[1]/2,sa[2]/2)
+  ENDELSE
+
+END
+
+
+
+
+

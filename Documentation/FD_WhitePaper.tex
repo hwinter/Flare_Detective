@@ -1,0 +1,32 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%	Project Report Template						
+%		by- Ashish & Shashi						
+%												
+% Source availabe@ -www.gnuboxcode.wordpress.com%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\documentclass[a4paper]{article}
+\usepackage{graphicx}%to handle image editing like scaling
+\usepackage{caption}
+\usepackage{listings}%to include source code, which understands keywords & commands & accordingly sets diff font
+\usepackage{fancyhdr}%include header & footer
+\usepackage[pdftitle=report,colorlinks=false]{hyperref}%to give reference links to sections & subsections
+\usepackage[a4paper]{geometry}%to modify default margins,offsets.change default geometry which is us-letter to a4paper  
+\title{Project Report}
+
+\begin{document}
+\include{title}% to include seperately written title.tex file 
+
+\pagestyle{plain}
+\pagenumbering{roman} 
+
+\tableofcontents%generates contents 
+\listoffigures
+\listoftables
+
+\include{content}%include the tex files u want
+\include{bibl}%to include bibliography file
+
+\end{document}
+
+%refer to the link to get more info
+%http://en.wikibooks.org/w/index.php?title=LaTeX/Print_version&printable=yes

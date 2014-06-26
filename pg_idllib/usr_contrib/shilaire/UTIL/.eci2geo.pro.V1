@@ -1,0 +1,93 @@
+;+
+; NAME:
+;       ECI2GEO
+;
+; PURPOSE:
+;       Converts from ECI (Earth-Centered Inertial) (X,Y,Z) rectangular coordinates to 
+;	geographic spherical coordinates (latitude, longitude, altitude).
+;	UT time is also needed.
+;
+;	ECI coordinates are in km from Earth center.
+;	Geographic coordinates are in degrees/degrees/km
+;
+; CALLING SEQUENCE:
+;       gcoord=eci2geo(ECIcoord,time)
+;
+; INPUT:
+;	ECIcoord : the ECI [X,Y,Z] coordinates (in km), can be an array [3,n] of n such coordinates.
+;	time: time (in any of the ANYTIM formats), can be n 1-D array of n times.
+;
+; KEYWORD INPUTS:
+;		None
+;
+; OUTPUT:
+;	a 3-element array of geographic [latitude,longitude,altitude], or an array [3,n] of n such coordinates	
+;
+; COMMON BLOCKS:
+;		None
+;
+; RESTRICTIONS:
+;       None
+;
+; EXAMPLES:
+;		IDL> gcoord=eci2geo([6378.137+600,0,0],'2002/03/09 21:00:00.000')
+;		IDL> print,gcoord
+;		0.0000000       237.62317       600.00000
+;
+;		(The above is also the geographic direction of the vernal point on 
+;		2002/03/09 21:00:00.000, in geographic coordinates.)
+;
+;
+;	HESSI trajectory:
+;		IDL> oso=hsi_obs_summary()
+;		IDL> oso->set,obs_time_interval='2002/04/21 '+['00:30:00','01:30:00']
+;		IDL> eph_times=oso->getdata(class_name='ephemeris',/time)
+;		IDL> eph=oso->getdata(class_name='ephemeris')
+;		IDL> gcoord=eci2geo(eph(0:2,*),eph_times)
+;		IDL> map_set,/cont,/mercator,/iso
+;		IDL> oplot,gcoord(1,*),gcoord(0,*)
+;
+;		gcoord can be transformed into geodetic coordinates (using geo2geodetic.pro)
+;		or into geomagnetic coordinates (using geo2mag.pro)
+;
+; MODIFICATION HISTORY:
+;		Written by Pascal Saint-Hilaire (shilaire@astro.phys.ethz.ch) on 2001/05/13
+;		
+;-
+
+;====================================================================================
+FUNCTION eci2geo_singlepoint,incoord,time
+
+	Re=6378.137	; Earth's equatorial radius, in km
+
+	coord = DOUBLE(incoord)
+
+	theta=atan(coord(1),coord(0))	; azimuth
+	t=anytim(time,/ex)
+	ct2lst,gst,0,0,ten(t(0),t(1)),t(4),t(5),t(6)
+	angle_sid=gst*2.*!PI/24.	; sidereal angle
+	lon= (theta - angle_sid ) MOD (2* !PI)	;longitude
+	if lon lt 0. then lon=lon+(2* !PI)
+	r=sqrt(coord(0)^2+coord(1)^2)
+	lat=atan(coord(2),r)		; latitude
+	alt=r/cos(lat) - Re		; altidude 
+
+	lat=lat*180./(!PI)	; to convert from radians into degrees...
+	lon=lon*180./(!PI)
+	
+	RETURN,[lat,lon,alt]
+END
+;====================================================================================
+FUNCTION eci2geo,ECIcoord,times
+	S=Size(ECIcoord)
+	IF S[1] NE 3 THEN RETURN,-1
+	
+	IF S[0] EQ 1 THEN gcoord=eci2geo_singlepoint(ECIcoord,times(0)) ELSE BEGIN
+		IF N_ELEMENTS(times) NE S[2] THEN RETURN,-1
+		gcoord=DBLARR(3,S[2])	
+		FOR i=0L,S[2]-1 DO gcoord(*,i)=eci2geo_singlepoint(ECIcoord(*,i),times(i))
+	ENDELSE
+
+	RETURN,gcoord
+END
+;====================================================================================

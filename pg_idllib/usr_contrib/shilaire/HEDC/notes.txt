@@ -1,0 +1,110 @@
+HEDC - Extended Catalog Maker
+*****************************
+PSH
+*****************************
+
+
+List of future/possible improvements or things to be done
+_________________________________________________________
+
+
+- dynamic range of Hessi imaging ? ( --> multiplicity searches...)
+
+- make my own detection of solar/non-solar flares, instead of relying
+	on jmm's flarelist.... 
+	
+- make electron event detections...
+
+- better color for .jpg from plot_hsi_pos...
+
+- use the SSW on hercules...
+
+- refine QT search (i.e. how I calculate & take into account the bkgnd...)
+
+- refine Qlook  making so that I don't load Hessi Color table several times...
+ and does not load a new window all the time...
+
+- spectra qlooks should be taken at PEAK time (not between start & end !!!), mid-start and mid-end.
+
+- write down recipe for making all qlooks of an event by hand...
+
+- don't forget to erase all files before making another round 
+	(as I APPEND things to both if they already exist ...)
+	
+- stop making useless window appear during qlook making...
+	(-> congrid any image to 512x512...)
+
+- before making a movie in the 500 keV+ range, check if there are any counts in that range...
+	--> put them back on again...
+
+
+Some benchmarks
+---------------
+
+2001/04/24  : for Jmm simulated data 31-aug-00 02:00 to 22:00 : ("MEM")
+		2.2 hours ; help,/mem :
+		heap memory used: 1207555295, max: 1215022258, gets: 175886032, frees: 175832122
+		
+2001/04/24 : 0.6 hours; help,/mem:	("CLEAN")
+		heap memory used:  546640878, max:  564226104, gets: 59694943, frees: 59676415
+		
+All of the above for 10 lightcurves and 28 images.
+"CLEAN" is obviously the fastest ...
+	
+
+
+NEW SIMULATED DATA + JMM Qlook extraction:
+2001/05/20 : 7390 secs (without spectra) for all 10 events
+help,/mem results in 4 MB only !
+
+2001/05/24 : 12980 secs (WITH spectra) - all 10 events
+help,/mem results in 5MB only.
+	.fits files : 91 (6 for events, 85 for DP)
+	.jpg files  : 235 (85 images, 80 obs. summ. pictures, 40 Qlooks, 30 spectra))
+	.info files : 235 (	"	"		"		"		"		"		"		"  )
+	.einfo files: 20  (7 SF, 3 OF, 10 QT)
+total space taken  by those files : 34 MB
+
+
+2001/06/01 : 10391 secs, 35 MB
+
+
+
+
+
+
+
+------------
+SOME RECIPES
+------------
+hedc_event_main,'01-sep-00 '+['00:02','00:53']
+hedc_event_main,'01-sep-00 '+['00:22:45','00:23:15'],/no_obs_summ,/no_movies,/no_spectra,/no_jmm
+
+
+
+
+
+.r hedc_event_main
+hedc_initialize
+
+.r hedc_event_main
+hedc_do_event_type,'QT'
+
+setenv,'HEDC_DATA_DIR=/global/hercules/users/shilaire/HESSI/hedc_data'
+hedc_make_events,'01-sep-00 '+['00:22:30','00:23:30'],'SF',6666,1,an_event,11,CREATOR='PSH'
+hedc_make_events,'01-sep-00 '+['00:16:00','00:17:00'],'QT',6666,1,an_event,11,CREATOR='PSH'
+
+hedc_do_qlook,'QT','01-sep-00 '+['00:22:30','00:23:30'],[0.0,0.0],11,/images,/movies,/obs_summ ;,/spectra
+
+//*************************************************************************************
+
+I need a recipe to make all Qlooks for a single event.
+
+
+
+
+
+
+
+
+

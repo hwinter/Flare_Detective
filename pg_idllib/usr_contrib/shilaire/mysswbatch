@@ -1,0 +1,21 @@
+#!/usr/bin/csh -f
+
+#PSH 2001/09/28 
+#This simple file will execute any IDL batch files
+#USAGE (from a UNIX shell):  mysswbatch idlfile
+#The idlfile.pro must be in the !path, and must NOT start with PRO or FUNCTION !!!
+
+
+setenv IDL_DIR /usr/local/rsi/idl_5.3
+setenv IDL_STARTUP /global/carme/home/shilaire/IDL/PSH_idl_startup.pro
+setenv SSW /global/helene/local/ssw
+setenv SSW_INSTR "gen radio ethz yohkoh hxt sxt nrh trace eit"
+#setenv SSWD /global/helene/data/ssw/soho/data
+
+set log="/global/hercules/users/shilaire/LOGS/"$1".log"
+
+set cmd="$SSW""/gen/bin/ssw_batch "$1" "$log
+eval $cmd
+
+echo "--------------------- Batch job ended on " `date` "-------------" >> $log
+exit

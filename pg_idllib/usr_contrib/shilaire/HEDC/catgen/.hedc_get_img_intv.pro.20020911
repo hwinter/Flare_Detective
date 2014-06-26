@@ -1,0 +1,115 @@
+; to_nice_img_intervals.pro does "most" of the work, i.e. finds time intervals suitable for imaging.
+;	This routine actually cuts'em up in smaller pieces suitable for imaging time_range.
+;
+; This routine will return a list of time_ranges GOOD for ONE image.
+; If a time interval does not have enough counts, won't allow it.
+; If that would mean NO allowable time ranges, then one with the most counts is returned
+; Better to give FLARE time interval (i.e. no useless background time)
+;
+; eband can is list of Obs. Summ. energy bands to check
+; If keyword maxintv is used, will return only that number of intervals (if possible, spaced evenly
+; among the available intervals).
+;
+; if maxaccumtime is specified (in seconds), time segments will be limited to this value
+; if backgnd_intv is specified, then counts ABOVE background levels will be considered. 
+;       CAREFUL HERE: Maybe I should not use it, whenever we have varying attenuator/decimation states.
+;	We definately need properly background-subtracted lightcurves, with background corrected appropriately
+;	in EACH TIME BIN for bin's attenuator/decimation states.
+;
+;
+; all returned time intervals are sorted by ascending time.
+; output keyword mostcounts gives ss of interval with most counts
+;
+; a -1 is returned if absolutely nothing is suitable for imaging.
+;
+;
+; Later: should reject pile-up times, etc...
+;
+
+
+FUNCTION hedc_get_img_intv, time_intv,			$
+	nbrcounts=nbrcounts, eband=eband, maxaccumtime=maxaccumtime,maxintv=maxintv,backgnd_intv=backgnd_intv	
+	
+	IF NOT KEYWORD_SET(nbrcounts) THEN nbrcounts=2000
+	IF NOT KEYWORD_SET(eband) THEN eband=2	; could be[1,2,3] for 6-50 keV range...
+	
+	good_time_intvs=to_nice_img_intervals(time_intv,eband=eband,mostcounts=most_counts_intv_ss,counts=countsarray)
+	;Now I have a list of time intervals appropriate for imaging (no SAA/NIGHT, no change in attenuator states, etc...),
+	; and having at least 'nbrcounts'. Now, one only has to chop'em up in smaller imaging segments of nbrcounts.
+	IF N_ELEMENTS(good_time_intvs) EQ 1 THEN RETURN,-1	; no good intervals!
+	
+	oso=hsi_obs_summary()
+	oso->set,obs_time_interval=time_intv
+	rates_struct=oso->getdata()
+	rates=rates_struct.COUNTRATE
+	times=oso->getdata(/time)
+	info=oso->get(class_name='hsi_obs_summ_rate')
+	IF KEYWORD_SET(backgnd_intv) THEN BEGIN
+		oso->set,obs_time_interval=backgnd_intv
+		backrates=oso->getdata()
+		back_lvl=avg(backrates,1)
+		FOR i=0,N_ELEMENTS(back_lvl)-1 DO rates[i,*]=rates[i,*]-back_lvl[i]
+	ENDIF
+	OBJ_DESTROY,oso
+
+	;FOR EACH good_time_intv, subdivide into minimal imaging intervals
+	FOR i=0,N_ELEMENTS(good_time_intvs[0,*])-1 DO BEGIN
+		tmp=WHERE(times GE good_time_intvs[0,i])
+		ss_start=tmp[0]
+		tmp=WHERE(times GE good_time_intvs[1,i])
+		ss_end=tmp[0]
+		
+		j=ss_start
+		WHILE j LE ss_end DO BEGIN
+			curj=j
+			cumtot=0L
+			WHILE cumtot LT nbrcounts DO BEGIN
+				ctsforcurrentbin=0
+				FOR k=0,N_ELEMENTS(eband)-1 DO BEGIN
+					ctsforcurrentbin=ctsforcurrentbin+rates[eband[k],j]*info.time_intv
+				ENDFOR
+				cumtot=cumtot+ctsforcurrentbin				
+				j=j+1
+				IF j GE ss_end THEN BREAK
+				IF KEYWORD_SET(maxaccumtime) THEN IF (j-curj)*info.time_intv GT maxaccumtime THEN BREAK
+			ENDWHILE			
+			IF cumtot GE nbrcounts	THEN BEGIN			
+				newtim=[times[curj],times[j]]
+				IF NOT EXIST(tim) THEN tim=newtim ELSE tim=[[tim],[newtim]]
+			ENDIF
+			j=j+1
+		ENDWHILE
+	ENDFOR
+	IF exist(tim) THEN BEGIN
+		IF KEYWORD_SET(maxintv) THEN BEGIN
+			tmp=N_ELEMENTS(tim[0,*])
+			IF tmp GT maxintv THEN tim=tim(*,FIX(FINDGEN(maxintv)*tmp/maxintv))
+		ENDIF	
+		RETURN,tim 	
+	ENDIF ELSE BEGIN
+		;RETURN,good_time_intvs[*,FIX((N_ELEMENTS(good_time_intvs[0,*])-1)/2)]	; else returns ~middle interval...
+		; instead of returnning middle one, should return the one with the highest counts in it...
+		PRINT,'................ not enough counts in any of the time intervals.'
+		PRINT,'.......Returning interval with highest number of counts.'
+		tim=good_time_intvs[*,most_counts_intv_ss]
+			;if tmp is bigger than maxaccumtime, then return the proper range
+			IF KEYWORD_SET(maxaccumtime) THEN BEGIN
+				IF (tim[1]-tim[0]) GT maxaccumtime THEN BEGIN
+					;find the peak rate in this eband and time interval, return peak time +/- maxaccumtime/2
+					tmp=WHERE(times GE tim[0])
+					ss_start=tmp[0]
+					tmp=WHERE(times GE tim[1])
+					ss_end=tmp[0]
+										
+					tmp=MAX(TOTAL(rates[[eband],ss_start:ss_end],1),peak_time_ss)
+					newtim=times[peak_time_ss]+FLOAT(maxaccumtime)*[-0.5,0.5]
+					IF newtim[1] GT tim[1] THEN newtim=newtim-(newtim[1]-tim[1])
+					IF newtim[0] LT tim[0] THEN newtim=newtim+(newtim[0]-tim[0])
+					tim=newtim
+				ENDIF
+			ENDIF
+		RETURN, tim
+	ENDELSE
+END
+
+

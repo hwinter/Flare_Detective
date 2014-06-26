@@ -1,0 +1,102 @@
+;procedure to create & update plots of gband intenisty daily
+
+PRO pg_dogbandstuff,st1=st1,st2=st2
+
+set_plot,'Z';such that it works on cron jobs as well
+
+now=anytim(!stime)
+ndays=32.
+
+
+;pg_create_gband_savefile,now-[ndays,2.]*24.*3600.
+
+
+pg_update_gbandinfo,[anytim('01-OCT-2006'),now],filenamebase='gband_day_',st1=st1,st2=st2
+
+;pg_update_gbandinfo,[anytim('01-OCT-2006'),anytim('31-MAY-2007')],filenamebase='gband_day_',st1=st1,st2=st2
+
+
+t0=st1[0].time
+
+plotdir='~/www/gbandplot/'
+
+linecolors
+wdef,1,1024,768
+loadct,0
+linecolors
+!p.color=0
+!p.background=255
+!p.charsize=1
+;!p.font=0
+;device,set_font='-adobe-helvetica-bold-r-normal--14-140-75-75-p-82-iso8859-1'
+
+cs=2.
+
+pg_setplotsymbol,'DIAMOND',size=1.2
+utplot,st1.time-t0,st1.nonsplum,t0, $
+       yrange=[1.8d4,3d4],color=12,psym=8,timerange=[anytim('01-OCT-2006'),now+10.*24.*3600.], $
+       /xstyle,labelpar=[0,8],title='Longterm G-band intensity plot updated '+anytim(now,/vms), $
+       xtitle=' '
+
+pg_setplotsymbol,'CIRCLE',size=1
+outplot,st2.time-t0,st2.nonsplum,t0,color=2,psym=8
+
+
+data=rd_ascii('~/www/gbandplot/bakeoutlist.txt')
+stime=anytim(strmid(data[7:n_elements(data)-2],19,20))
+etime=anytim(strmid(data[7:n_elements(data)-2],44,20))
+FOR i=0,n_elements(stime)-1 DO BEGIN 
+   polyfill,[stime[i],etime[i],etime[i],stime[i],stime[i]]-t0+6*3600.,!Y.crange[[0,0,1,1,0]] $
+           ,/data,color=7;,/line_fill,orientation=45.
+
+
+ ;  device,set_font='-adobe-helvetica-bold-r-normal--25-180-100-100-p-138-iso8859-1'
+
+   xyouts,0.5*(stime[i]+etime[i])-t0,2.9d4,strtrim(i+1,2),/data,align=0.5,charsize=cs
+   xyouts,anytim('01-MAY-2007')-t0,2.9d4,'BAKEOUT #',/data,align=0.5,charsize=cs
+  ; device,set_font='-adobe-helvetica-bold-r-normal--14-140-75-75-p-82-iso8859-1'
+
+
+ENDFOR
+
+tvlct,r,g,b,/get
+im=tvrd()
+write_png,'~/www/gbandplot/gband_longterm.png',im,r,g,b
+
+pg_setplotsymbol,'DIAMOND',size=1.2
+utplot,st1.time-t0,st1.nonsplum,t0, $
+       yrange=[1.8d4,3d4],color=12,psym=8,timerange=now+[-8.*30.*24*3600,+10.*24.*3600.], $
+       /xstyle,labelpar=[0,8],title='Longterm G-band intensity plot updated '+anytim(now,/vms)
+
+pg_setplotsymbol,'CIRCLE',size=1
+outplot,st2.time-t0,st2.nonsplum,t0,color=2,psym=8
+
+
+data=rd_ascii('~/www/gbandplot/bakeoutlist.txt')
+stime=anytim(strmid(data[7:n_elements(data)-2],19,20))
+etime=anytim(strmid(data[7:n_elements(data)-2],44,20))
+FOR i=0,n_elements(stime)-1 DO BEGIN 
+   polyfill,[stime[i],etime[i],etime[i],stime[i],stime[i]]-t0+6*3600.,!Y.crange[[0,0,1,1,0]] $
+           ,/data,color=7,noclip=0;,/line_fill,orientation=45.
+
+
+ ;  device,set_font='-adobe-helvetica-bold-r-normal--25-180-100-100-p-138-iso8859-1'
+
+   xyouts,0.5*(stime[i]+etime[i])-t0,2.9d4,strtrim(i+1,2),/data,align=0.5,charsize=cs
+   xyouts,anytim('01-MAY-2007')-t0,2.9d4,'BAKEOUT #',/data,align=0.5,charsize=cs
+;   device,set_font='-adobe-helvetica-bold-r-normal--14-140-75-75-p-82-iso8859-1'
+
+
+ENDFOR
+
+
+im=tvrd()
+write_png,'~/www/gbandplot/gband_sixmonth.png',im,r,g,b
+
+
+END
+
+
+
+
+

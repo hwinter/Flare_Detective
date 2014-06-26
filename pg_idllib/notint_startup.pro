@@ -1,0 +1,5 @@
+IF GETENV('RAPP_IDL_ROOT') NE '' THEN add_path,GETENV('RAPP_IDL_ROOT'),/EXPAND,/APPEND,/QUIET
+
+remove_path, 'SSWoverrides'
+IF GETENV('RAPP_IDL_ROOT') NE '' THEN add_path,GETENV('RAPP_IDL_ROOT')+'/SSWoverrides',/EXPAND,/QUIET
+

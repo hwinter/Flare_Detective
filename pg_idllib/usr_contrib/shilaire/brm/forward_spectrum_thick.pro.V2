@@ -1,0 +1,81 @@
+; PSH 2003/02/25 -- v2
+;
+; This script determines the HXR bremsstrahlung emitted by an injection electron distribution in a thick target.
+; If keyword 'Estar' is used, it disables (of course) the 'il' keyword (puts it to 1.), and applies a correction due to a unit step ionization level.
+; /ALBEDO correction might not be the very best there is...
+;
+; Eph MUST BE REGULARLY SPACED!!!!
+; 
+; Default values were optimized for a delta=4 power-law. (less than 1% error in resulting spectral index, at EVERY PORTION of the resulting spectrum!)
+;
+;EXAMPLE:
+;	sp=forward_spectrum_thick(/EARTH,/LOUD,Eph=Eph)
+;	PLOT,Eph,sp,/XLOG,/YLOG,xtit='photon energy [keV]',ytit='[photons s!U-1!N cm!U-2!N keV!U-1!N]',xr=[1,100]
+;
+;	sp=forward_spectrum_thick(/EARTH,delta=4.,targetT=0, Estar=0,ALBEDO=0,thermal=0,Eph=Eph,/LOUD)
+;	PLOT,Eph,sp,/XLOG,/YLOG,xtit='photon energy [keV]',ytit='[photons s!U-1!N cm!U-2!N keV!U-1!N]',xr=[1,100]
+;
+;	sp=forward_spectrum_thick(/EARTH,delta=4.,Eph=Eph,E0max=300.,n_inner=300,n_outer=300,/LOUD)
+;	sp=forward_spectrum_thick(/EARTH,Eph=Eph,E0max=3000.,n_inner=3000,n_outer=3000,/LOUD)
+;
+;
+;COMMENTS:	
+;	This version 2 is fully functional (and quite thouroughly tested), and actually VERY ACCURATE EVERYWHERE (with the default number of iterations), but needs a BIG time to compute. 
+;--------------------------------------------------------------------------------------------
+;--------------------------------------------------------------------------------------------
+;--------------------------------------------------------------------------------------------
+FUNCTION forward_spectrum_thick__electron_injection, E0, delta=delta, dN50dt=dN50dt		; in F0E0 in [electrons.s^-1.keV^-1]
+	IF NOT EXIST(delta) THEN delta=4D
+	IF NOT EXIST (dN50dt) THEN dN50dt=1.295e33		;dotN50=5e26
+	
+	;IF E0 LT 0D THEN RETURN,0D	; no low-energy cutoff	
+	IF E0 LT 20D THEN RETURN,0D	; low-energy cutoff
+	;IF E0 LT 20D THEN RETURN,dN50dt*(20D/50D)^(-delta)	; flat below cutoff				
+	;IF E0 GT 3000D THEN RETURN,0D	; high-energy cutoff
+	;IF E0 LE 20D THEN RETURN,dN50dt*(20D/50D)^(-delta) ELSE RETURN,0D	;unit step distribution
+	RETURN, dN50dt*(E0/50D)^(-delta)
+END
+;--------------------------------------------------------------------------------------------
+FUNCTION forward_spectrum_thick__number_of_photons__function, E,epsilon=epsilon,il=il,T=T
+	RETURN, betheheitler_brm_crosssection(E,epsilon)/E/collisional_energy_loss_crosssection(E,il,T=T)
+END
+;--------------------------------------------------------------------------------------------
+FUNCTION forward_spectrum__number_of_photons__compute, epsilon, E0,il=il, T=T, n_inner=n_inner
+	IF NOT EXIST(il) THEN il=1.
+	RETURN,integrate_1d('forward_spectrum_thick__number_of_photons__function',n=n_inner,epsilon,E0,epsilon=epsilon,il=il,T=T) 
+END
+;--------------------------------------------------------------------------------------------
+;--------------------------------------------------------------------------------------------
+FUNCTION forward_spectrum_thick,EARTH=EARTH,LOUD=LOUD, il=il, targetT=targetT, Estar=Estar, delta=delta, dN50dt=dN50dt, ALBEDO=ALBEDO, thermal=thermal, Eph=Eph, n_inner=n_inner, n_outer=n_outer, E0max=E0max
+	
+	IF KEYWORD_SET(Estar) THEN il=1.	
+	IF NOT KEYWORD_SET(delta) THEN delta=4D ELSE delta=DOUBLE(delta)
+	IF NOT EXIST(Eph) THEN Eph=DINDGEN(100)+0.5	;always give middle of bins
+		tmp=Eph[1]-Eph[0]	
+		Eph_edges=TRANSPOSE([[Eph-tmp/2.],[Eph+tmp/2.]])
+	IF NOT KEYWORD_SET(n_inner) THEN n_inner=300	
+	IF NOT KEYWORD_SET(n_outer) THEN n_outer=3000	;nbr iterations for outside integral
+	IF NOT KEYWORD_SET(E0max) THEN E0max=3000D
+		delta_E0=( E0max-Eph[0] )/n_outer
+		IF KEYWORD_SET(LOUD) THEN PRINT,'.............delta_E0= '+strn(delta_E0)
+		D=499D * 29979245800D	;[cm] Sun-Earth distance
+		sp=DBLARR(N_ELEMENTS(Eph))
+		
+	FOR i=0L,N_ELEMENTS(Eph)-1 DO BEGIN
+		IF KEYWORD_SET(LOUD) THEN PRINT,'Doing Eph= '+strn(Eph[i])+' keV'
+		E0=Eph[i]
+		sp[i]=0.
+		WHILE E0 LT E0max DO BEGIN
+			sp[i]=sp[i]+delta_E0* forward_spectrum_thick__electron_injection(E0,delta=delta, dN50dt=dN50dt)*forward_spectrum__number_of_photons__compute(Eph[i], E0,il=il,T=targetT,n_inner=n_inner)
+			E0=E0+delta_E0
+		ENDWHILE
+	ENDFOR
+	
+	; sp currently in [photons s^-1 kev^-1]
+	IF KEYWORD_SET(EARTH) THEN sp=sp/(4*!dPI*D^2)	; sp now in [photons s^-1 cm^-2 kev^-1]
+	IF KEYWORD_SET(Estar) THEN sp=sp*kontar_ionization_correction(Eph, delta, Estar=DOUBLE(Estar))
+	IF KEYWORD_SET(ALBEDO) THEN sp=sp*alexander_albedo_correction(Eph,delta-1.)
+	IF KEYWORD_SET(thermal) THEN sp=sp+mewe_kev(DOUBLE(thermal[0])*11.594,Eph_edges,/EDGES,/photon,/kev,earth=EARTH)*DOUBLE(thermal[1])*1e5	; add thermal bremsstrahlung component...(thermal[0] is temprature in keV, thermal[1] is EM in 10^49 cm^-3 units)
+	RETURN,sp
+END
+;--------------------------------------------------------------------------------------------

@@ -1,0 +1,100 @@
+[PSH]:  je n'ai mis que le principal, voir le email de HH pour plus de details
+	il s'agit ici de faire des light curves, images, etc avec des donnees YOHKOH
+	
+
+
+; IDL Version 5.2 (OSF alpha)
+; Journal File for hudson@isass1.solar.isas.ac.jp
+; Working directory: /tmp_mnt/scr/s2/hudson
+; Date: Tue Aug 29 14:05:52 2000
+ 
+
+print,infil
+
+
+;/temp_ref_isass5/reformat/spr000825.1344
+
+.r yodat
+
+  
+;Enter file name (or wild cards) 
+; 
+;There are          214 data sets in file(s) (/temp_ref_isass5/reformat/spr000825.1344)
+
+; -333
+
+ 
+;Total Number of Images =           82
+;Information is contained in INFO_ARRAY
+
+
+stepper,index,data,xs=256
+; ...
+
+sindex = index(6)
+sdata = data(*,*,6)
+
+
+
+;
+; these are the HXT native coordinates, needed for image registration.
+; I picked data(*,*,6) because it was nice and clean-looking.
+;
+
+
+.g
+
+
+;               *******  YODAT V9.4 (29-Nov-97)  *******
+;  
+;Enter file name (or wild cards) 
+; same hda
+;There are          824 data sets in file(s) (/temp_ref_isass5/reformat/hda000825.1344)
+
+
+; -333
+
+
+hxt_multimg,index,data,ihxt,dhxt,xy=xy,channel=1
+
+;***TRY doc_library, "hxt_multimg"
+
+
+;BACKGROUND SELECTION::
+;*** ACCUMULATION START TIMES FROM:
+;25-AUG-00  14:36:36.380   TO   25-AUG-00  14:37:28.380
+
+
+;IMAGE INTERVAL SELECTION::
+;*** ACCUMULATION START TIMES FROM:
+;25-AUG-00  14:27:28.884   TO   25-AUG-00  14:27:44.884
+
+;*** INPUT TIME RESOLUTION, IN NUMBER OF DATA SETS, 
+;*** UP TO           33 DATA SETS PER INTERVAL
+
+; 33
+
+; % Program caused arithmetic error: Floating underflow
+
+
+help,dhxt
+fmt_timer,ihxt
+
+
+;(first, last) = '25-AUG-00  14:27:28', '25-AUG-00  14:27:28'
+
+
+big_dhxt = bytarr(128,128)
+big_dhxt(32:32+63,32:32+63) = dhxt
+tvscl,rebin(sdata,512,512,/samp)
+ocontour,big_dhxt,bin=4
+loadct,3
+over
+
+
+
+;
+; Hmmm. Interesting! The HXT source seems to be predominantly at one footpoint
+; of the SXT flare loop, at least for this time interval!
+;
+

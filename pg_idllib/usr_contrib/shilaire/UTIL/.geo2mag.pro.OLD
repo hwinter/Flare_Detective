@@ -1,0 +1,78 @@
+; PSH, May 13th, 2001
+
+
+;PURPOSE:
+;	Converts geographic coordinates to geomagnetic coordinates
+;   Geographic is NOT geodetic (i.e. we assume that the earth is a perfect sphere, here)
+
+;INPUTS:
+;	incoord : input geographic coordinates : 3-element array [latitude,longitude,altitude]
+;				(in degrees/km above Earth's surface)
+
+;OUPUTS:
+;	the equivalent geomagnetic coordinates [latitude,longitude,altitude], in degrees
+
+;EXAMPLE:
+;	print,geo2mag([79.3,288.59,0.])			
+			
+; modified 2001/09/24: added incoord = DOUBLE(incoord)
+
+
+			
+FUNCTION geo2mag,incoord
+
+incoord = DOUBLE(incoord)
+
+; SOME 'constants'...
+; keep in mind that here, I assume the Earth is a perfect sphere.
+Re=6378.137D	; Earth's equatorial radius /km (WGS '84 / GRS '80)
+Dlong=288.59D	; longitude (in degrees) of Earth's magnetic south pole (which is near the geographic north pole...) (1995)
+Dlat=79.30D 	; latitude (in degrees) of same (1995)
+
+; convert first to radians/distance from Earth's center
+incoord(0)=incoord(0)*!PI/180.
+incoord(1)=incoord(1)*!PI/180.
+incoord(2)=incoord(2)+Re
+Dlong=Dlong*!PI/180.
+Dlat=Dlat*!PI/180.
+
+;convert to rectangular coordinates
+;	X-axis: defined by the vector going from Earth's center towards
+;			the intersection of the equator and Greenwitch's meridien.
+;	Z-axis: axis of the geographic poles
+;	Y-axis: defined by Y=Z^X
+x=incoord(2)*cos(incoord(0))*cos(incoord(1))
+y=incoord(2)*cos(incoord(0))*sin(incoord(1))
+z=incoord(2)*sin(incoord(0))
+
+;Compute 1st rotation matrix : rotation around plane of the equator,
+;from the Greenwich meridian to the meridian containing the magnetic
+;dipole pole.
+geolong2maglong=dblarr(3,3)
+geolong2maglong(0,0)=cos(Dlong)
+geolong2maglong(0,1)=sin(Dlong)
+geolong2maglong(1,0)=-sin(Dlong)
+geolong2maglong(1,1)=cos(Dlong)
+geolong2maglong(2,2)=1.
+out=geolong2maglong # [x,y,z]
+
+;Second rotation : in the plane of the current meridian from geographic pole
+;to magnetic dipole pole.
+tomaglat=dblarr(3,3)
+tomaglat(0,0)=cos(!PI/2-Dlat)
+tomaglat(0,2)=-sin(!PI/2-Dlat)
+tomaglat(2,0)=sin(!PI/2-Dlat)
+tomaglat(2,2)=cos(!PI/2-Dlat)
+tomaglat(1,1)=1.
+out= tomaglat # out
+
+;convert back to latitude, longitude and altitude
+lat=myarctan(sqrt(out(0)^2+out(1)^2),out(2))
+lat=lat*180./!PI
+lon=myarctan(out(0),out(1))
+lon=lon*180./!PI
+alt=sqrt(out(0)^2+out(1)^2+out(2)^2)-Re
+
+RETURN,[lat,lon,alt]
+END
+

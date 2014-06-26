@@ -1,0 +1,16 @@
+FUNCTION rhessi_img_counts, imo
+
+	info=imo->get()
+
+	n_event = info.binned_n_event
+
+	text = hsi_coll_segment_list(info.det_index_mask, REFORM(info.a2d_index_mask, 9, 3), info.front_segment, info.rear_segment, colls_used=colls_used)
+	;XYOUTS,upperleft[0],upperleft[1],/DEVICE,text, charsize=charsize
+	
+	;total_events = strupcase (strtrim (string(total(n_event[where(colls_used),0]), format='(g12.3)'),2))
+	;total_events = 'Total counts: ' + str_replace (total_events, 'E+00', 'E+0')
+	;text=total_events 
+	;XYOUTS,lowerleft[0],lowerleft[1],/DEVICE,text, charsize=charsize
+
+	RETURN,total(n_event[where(colls_used),0])
+END

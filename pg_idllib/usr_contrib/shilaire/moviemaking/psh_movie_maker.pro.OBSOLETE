@@ -1,0 +1,83 @@
+; MASTER ROUTINE
+;	The cube will be saved in tempdir as an IDL save...
+;	IF the TRACE files and the HESSI tesseract file are already available, then use simply 'cube=psh_trace_hessi_movie_make_cube(mainfiles,hessifile)'
+; EXAMPLE:
+;	hessi_exclude_time_intvs='2002/08/22 '+[['01:44','01:48'],['02:20','02:40']]
+;	psh_movie_maker, 'Ebudget2/20020822/movie', '2002/08/22 '+['01:40','02:30'], [816,-272],/NOERASE, cube=cube,hessi_exclude_time_intvs=hessi_exclude_time_intvs
+;
+; PLANNED IMPROVEMENTS:
+;	-Will accept an HEDC event code, and look for images from there...
+;	-Should align TRACE images with an EIT one...
+;	-Should check whether xyoffset is ~within TRACE FOV
+;	-Should check whether we have HESSI data...?
+; 
+
+PRO psh_movie_maker, outdir, time_intv, xyoffset, cube=cube, SAVECUBE=SAVECUBE, NOERASE=NOERASE, MPEG=MPEG, hessi_exclude_time_intvs=hessi_exclude_time_intvs
+
+	;some variables:
+	mainimg='TRACE195'
+	hessiimg='HESSI1'
+	hessi_dt=20.
+	
+	;create a temporary workdir
+	;filetime=time2file(systim2anytim(),/SEC)
+	;workdir=outdir+'/temp_'+filetime
+	;FILE_MKDIR,workdir
+	workdir=outdir
+	
+	;download all relevant files that are used as main images (TRACE only, for now)
+	CASE mainimg OF
+		'TRACE195': psh_smmdac_download,'TRACE',time_intv, files=mainfiles, wl='195',workdir
+		ELSE: RETURN
+	ENDCASE
+	mainfiles=workdir+'/'+mainfiles
+	
+	;do HESSI images, if needed.
+	CASE hessiimg OF
+		'HESSI1': BEGIN		; have to generate RHESSI images 'on the fly'...
+			fits2map,mainfiles[0],tmp
+			hessi_time_intvs=anytim(tmp.time)+hessi_dt*[-0.5,0.5]
+			FOR i=1,N_ELEMENTS(mainfiles)-1 DO BEGIN
+				fits2map,mainfiles[i],tmp			
+				hessi_time_intvs=[[hessi_time_intvs],[anytim(tmp.time)+hessi_dt*[-0.5,0.5]]]
+			ENDFOR
+			hessi_ebands=[[6,12],[12,25],[25,50]]
+		END
+		ELSE: RETURN		
+	ENDCASE
+	IF KEYWORD_SET(hessi_exclude_time_intvs) THEN BEGIN
+		donttakeit=-1
+		FOR i=0L,N_ELEMENTS(hessi_time_intvs[0,*])-1 DO BEGIN
+			FOR j=0L,N_ELEMENTS(hessi_exclude_time_intvs[0,*])-1 DO BEGIN
+				IF has_overlap(hessi_time_intvs[*,i],hessi_exclude_time_intvs[*,j]) THEN BEGIN
+					IF donttakeit[0] EQ -1 THEN donttakeit=i ELSE donttakeit=[donttakeit,i]
+				ENDIF
+			ENDFOR
+		ENDFOR
+		IF donttakeit[0] NE -1 THEN BEGIN
+			takeit=LINDGEN(N_ELEMENTS(hessi_time_intvs[0,*]))
+			FOR i=0L,N_ELEMENTS(donttakeit)-1 DO takeit=remove_element(takeit,donttakeit[i])	
+			hessi_time_intvs=hessi_time_intvs[*,takeit]
+		ENDIF 
+	ENDIF
+	ptim, hessi_time_intvs
+	
+	hessifile=workdir+'/hsi_tesseract.fits'
+	rhessi_migen, hessi_time_intvs, hessi_ebands, xyoffset, hessifile
+	cube=psh_trace_hessi_movie_make_cube(mainfiles,hessifile)
+	HEAP_GC
+		
+	IF KEYWORD_SET(SAVECUBE) THEN SAVE,file='cube.idlsave',cube
+	IF NOT KEYWORD_SET(NOERASE) THEN BEGIN
+		;erase all temporary stuff in workdir+directory itself.
+		PRINT,'Erasing all temporary files...'
+		SPAWN,/NOSHELL,['rm','-rf ',workdir]
+	ENDIF
+	
+	IF KEYWORD_SET(MPEG) THEN BEGIN
+		;do MPEG output: SPAWN an IDL 5.3 process that will run in background ('&')
+		IF datatype(MPEG) NE 'STR' THEN MPEG=outdir+'/movie.mpg'
+		PRINT,'MPEG: Not yet implemented !!!'
+	ENDIF
+END
+

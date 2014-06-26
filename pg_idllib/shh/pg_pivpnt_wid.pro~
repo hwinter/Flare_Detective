@@ -1,0 +1,62 @@
+;+
+; NAME:
+;
+;        PG_PIVPNT_WID
+;
+; PURPOSE:
+;
+;        widget util to display flux versus gamma curves, and finding pivot points
+;
+; CATEGORY:
+;
+;        spectral evolution utils
+;
+; CALLING SEQUENCE:
+;
+;        pg_pivpnt_wid,flux,gamma,time=time,eref=eref
+;
+; INPUTS:
+;
+;        flux: array of fluxes
+;        gamma: array of spectral indices
+;
+; OPTIONAL INPUTS:
+;     
+;        eref: reference energy (default 50 [keV])
+;        time: time array
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; MODIFICATION HISTORY:
+;
+;-

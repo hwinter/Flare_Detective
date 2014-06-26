@@ -1,0 +1,134 @@
+; on saturn:
+;	hedc_solar_automatic,['2002/04/25 00:00:00','2002/04/30 23:59:59'],newdatadir='~/NEWHEDCDATA/',rejected_list_file='~/rejected_flares.list'
+;						newdatadir='/global/hercules/data1/hedc/data/products/NEWHEDCDATA/'
+;	
+;	hedc_solar_automatic,['2002/08/13 05:25:00','2002/09/01 23:59:00'],newdatadir='/global/hercules/data1/hedc/data/products/NEWHEDCDATA/',rejected_list_file='~/rejected_flares.list'
+;	hedc_solar_automatic,'2002/07/23 '+['00:00','01:00'],newdatadir='/global/hercules/users/shilaire/NEWHEDCDATA/',rejected_list_file='~/rejected_flares.list',/DEBUG
+;	hedc_solar_automatic,'2002/02/26 '+['10:25','10:30'],newdatadir='/global/saturn/data1/ftp/pub/hedc/fs/data1/hedc/data/products/NEWHEDCDATA/',rejected_list_file='~/rejected_flares.list',/DEBUG
+;	hedc_solar_automatic,'2002/02/20 '+['11:00','11:10'],newdatadir='/ftp/pub/hedc/fs/data1/hedc/data/products/NEWHEDCDATA/',rejected_list_file='~/rejected_flares.list',/DEBUG
+;	hedc_solar_automatic,'2002/04/21 '+['01:20','01:40'],newdatadir='/ftp/pub/hedc/fs/data1/hedc/data/products/NEWHEDCDATA/',rejected_list_file='~/rejected_flares.list',/DEBUG
+;
+;
+;	................then import using the JAVA routine...
+;
+;DEBUGGING TEST:
+;	hedc_solar_automatic,'2002/02/26 '+['10:25','10:30'],newdatadir='~/HEDC/NEWDATA/',rejected_list_file='~/rejected_flares.list',/DEBUG
+;	hedc_solar_automatic,'2002/04/21 '+['00:00','23:59'],newdatadir='~/HEDC/NEWDATA/',rejected_list_file='~/rejected_flares.list',/NOREPLACE
+;	hedc_solar_automatic,'2003/08/29 '+['07:30','08:00'],newdatadir='~/HEDC/NEWDATA/',rejected_list_file='~/rejected_flares.list',/DEBUG
+;
+;=====================================================================================================================================================================================
+;=====================================================================================================================================================================================
+;=====================================================================================================================================================================================
+;=====================================================================================================================================================================================
+;HEDC event generation from flare list...
+
+PRO hedc_solar_automatic, time_intv, newdatadir=newdatadir, rejected_list_file=rejected_list_file,DEBUG=DEBUG,GOESmin=GOESmin, NOREPLACE=NOREPLACE
+
+IF NOT KEYWORD_SET(newdatadir) THEN newdatadir=GETENV('HEC_OUTPUT_DIR')+'/'
+;IF NOT KEYWORD_SET(rejected_list_file) THEN rejected_list_file=GETENV('HEC_ROOT')+'/logs/rejected_flares.list'
+
+PRINT,'Interval of interest: '+anytim(time_intv[0],/ECS)+' to '+anytim(time_intv[1],/ECS)
+
+flo=hsi_flare_list()	
+flo->set,obs_time_interval=time_intv
+fl=flo->getdata()
+;flinfo=flo->get()
+OBJ_DESTROY,flo
+HEAP_GC
+
+IF datatype(fl) NE 'STC' THEN BEGIN
+	PRINT,'.........No flares in the flare list for that time interval. Aborting now.'
+	GOTO,THEEND
+ENDIF
+
+nbrtried=0
+nbrdone=0
+FOR j=0,N_ELEMENTS(fl)-1 DO BEGIN
+	doit=1	; doit =2 is for minimal event creation.
+	
+	es=0
+	IF KEYWORD_SET(DEBUG) THEN BEGIN
+		REMOVE_FROM_HEDC=0
+	ENDIF ELSE BEGIN
+		REMOVE_FROM_HEDC=1
+		CATCH,es
+	ENDELSE
+	IF KEYWORD_SET(NOREPLACE) THEN REMOVE_FROM_HEDC=0
+	
+	IF es NE 0 THEN BEGIN
+		es=0
+		PRINT,'...............................CAUGHT ERROR !......................'
+		HELP, CALLS=caller_stack
+		PRINT, 'Error index: ', es
+		PRINT, 'Error message:', !ERR_STRING
+		PRINT,'Error caller stack:',caller_stack
+		HELP, /Last_Message, Output=theErrorMessage
+		FOR k=0,N_Elements(theErrorMessage)-1 DO PRINT, theErrorMessage[k]
+		GOTO,NEXTPLEASE					
+	ENDIF
+
+;FLARE selection:-----------------------------------------------------------------------------------------------------------------------------------------
+	;info setup:
+	flare_intv=anytim([fl[j].START_TIME,fl[j].END_TIME])
+	flare_duration=fl[j].END_TIME-fl[j].START_TIME
+	IF KEYWORD_SET(GOESmin) THEN BEGIN
+		rd_goes,goestime,goesdata,trange=anytim(flare_intv,/yohkoh)
+		IF datatype(goesdata) EQ 'UND' THEN goesmax=-1 ELSE goesmax=MAX(goesdata[*,0])
+	ENDIF
+	
+	oso=hsi_obs_summary()
+	oso->set,obs_time=anytim(fl[j].PEAK_TIME)+[0.,8.]
+	flagdata_struct=oso->getdata(class='hsi_obs_summ_flag')	
+	OBJ_DESTROY,oso	
+
+	qmro=hsi_qlook_monitor_rate(obs_time_interval=anytim(fl[j].PEAK_TIME)+[0.,8.])
+	qmr=qmro->getdata()
+	;qmrtimes=qmro->getdata(/xaxis)
+	OBJ_DESTROY,qmro
+	
+;decisions:
+	
+	;do min:
+	IF fl[j].PEAK_COUNTRATE LT 8. THEN doit=2		;//PSH 2003/02/12: changed from 20 to 8
+	IF fl[j].TOTAL_COUNTS LT 2000 THEN doit=2
+	;IF flagdata_struct[0].FLAGS[24] NE 0 THEN doit=2 ;does not work good enough anymore... will use monitor rates...
+	IF TOTAL(qmr[0].PARTICLE_RATE) GT 25 THEN doit=2	;25 is a pretty arbitrary number...
+
+	;don't do:
+	IF flare_duration LT 8. THEN doit=0
+	IF ( (anytim(fl[j].PEAK_TIME) LT anytim(time_intv[0])) OR (anytim(fl[j].PEAK_TIME) GT anytim(time_intv[1])) ) THEN doit=0	
+	IF KEYWORD_SET(GOESmin) THEN BEGIN
+		IF GOESmin EQ 1 THEN GOESmin=1e-5 ; M1.0
+		IF goesmax LT GOESmin THEN doit=0
+	ENDIF
+;-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+	IF doit NE 0 THEN BEGIN
+		nbrtried=nbrtried+1				
+		PRINT,'...................Doing '+anytim(/ECS,fl[j].peak_time)+' ................'
+		IF doit EQ 2 THEN PRINT,'.................... (MINIMUM) ......................'
+		hedc_solar_event,flare_intv,STD=2-doit,MINIMUM=doit-1,/ZBUFFER,newdatadir=newdatadir,backgndtime=[fl[j].BCK_TIME[0],fl[j].BCK_TIME[1]-30],REMOVE_FROM_HEDC=REMOVE_FROM_HEDC,DEBUG=DEBUG, flarelistid=fl[j].ID_NUMBER
+		nbrdone=nbrdone+1				
+	ENDIF ELSE BEGIN
+		IF KEYWORD_SET(rejected_list_file) THEN BEGIN
+			OPENW,lun,rejected_list_file,/GET_LUN,/APPEND
+			PRINTF,lun,'Rejected flarelist entry: '+anytim(fl[j].PEAK_TIME,/ECS)
+			FREE_LUN,lun		
+		ENDIF
+	ENDELSE
+
+	NEXTPLEASE:
+	CATCH,/CANCEL
+	HEAP_GC
+ENDFOR
+
+PRINT,'............There were '+strn(N_ELEMENTS(fl))+' flares in the flarelist.'
+PRINT,'............Only '+strn(nbrtried)+' were attempted.'
+PRINT,'............'+strn(nbrdone)+' were completed.'
+
+THEEND:
+PRINT,'IDL-OK'
+
+IDLversion=FLOAT(STRMID(!version.release,0,3))
+IF IDLversion EQ 5.4 THEN FLUSH,-1
+END
+;=====================================================================================================================================================================================

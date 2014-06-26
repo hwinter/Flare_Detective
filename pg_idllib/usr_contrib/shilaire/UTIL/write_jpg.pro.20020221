@@ -1,0 +1,14 @@
+; PSH, May 4th 2001
+
+; this routine writes a pseudo_color image to a .jpg file.
+; color correspondence is not extraordinary, but it works...
+
+
+PRO write_jpg,filename,img,r,g,b
+S=size(img)
+timg=bytarr(3,S[1],S[2])
+for i=0,S[1]-1 do for j=0,S[2]-1 do timg(0,i,j)=r(img(i,j))
+for i=0,S[1]-1 do for j=0,S[2]-1 do timg(1,i,j)=g(img(i,j))
+for i=0,S[1]-1 do for j=0,S[2]-1 do timg(2,i,j)=b(img(i,j))
+WRITE_JPEG,filename,timg,TRUE=1
+END

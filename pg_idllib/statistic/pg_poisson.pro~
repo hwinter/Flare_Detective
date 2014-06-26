@@ -1,0 +1,77 @@
+;+
+; NAME:
+;
+; pg_poisson
+;
+; PURPOSE:
+;
+; returns the cauchy probability distribution function
+;
+; CATEGORY:
+;
+; statistic util
+;
+; CALLING SEQUENCE:
+;
+; y=pg_cauchy(x,s=s,t=t)
+;
+; INPUTS:
+;
+; x: function argument
+; s,t: optional parameters
+;      t: location par 
+;      s: scale par
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+; OUTPUTS:
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+; COMMON BLOCKS:
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; AUTHOR:
+;
+; Paolo Grigis, Institute of Astronomy, ETH Zurich
+; pgrigis@astro.phys.ethz.ch
+;
+; MODIFICATION HISTORY:
+;
+; 25-JUL-2006 written PG
+;
+;-
+
+FUNCTION pg_cauchy,x,s=s,t=t
+
+s=fcheck(s,1)
+t=fcheck(t,0)
+
+y=1/(s*!DPi*(1+((x-t)/s)^2))
+
+RETURN,y
+
+END

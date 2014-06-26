@@ -1,0 +1,65 @@
+;+
+; xypos is in normal plot coordinates
+; /XDATA: xypos[0] is actually in data coordinates, otherwise, xypos[0] is the fraction of the xinterval where to put the label (0. to 1.)
+; /YDATA: xypos[1] is actually in data coordinates, otherwise, if a positive integer is given for xypos[1], it is assumed to be the position above LOWER border of graph; 
+;		if a negative integer is given for xypos[1], it is assumed to be the position below UPPER border of graph.
+; LINE: if set, adds a line before the text..., can also be a float between ]0.,1.], indicating what fraction of the plot's width will the line take. A 1 will be treated as 0.1, a 1. as 1.
+; dy_char: vertical spacing between label characters, in multiples of charsize (default is 1), only useful if /YDATA not set...
+;
+;
+; Also works on log plots, and on postscript stuff !!!!
+;
+;
+;	EXAMPLE:
+;		label_plot, 0.9, -1,'blabla',/LINE, style=1,psym=-7,color=3,charsize=2.0
+;
+; HISTORY:
+;	 PSH, Halloween 2003
+;
+;-
+
+PRO label_plot, x, y, text, XDATA=XDATA, YDATA=YDATA, LINE=LINE, dy_char=dy_char, color=color, style=style, psym=psym, charsize=charsize
+
+	ON_ERROR,2
+	IF NOT EXIST(text) THEN text=''
+	IF NOT KEYWORD_SET(charsize) THEN charsize=1.0
+		
+	ll_data=DBLARR(2)
+	ur_data=DBLARR(2)
+	IF !X.TYPE EQ 1 THEN BEGIN
+		ll_data[0]=10^!X.CRANGE[0]
+		ur_data[0]=10^!X.CRANGE[1]
+	ENDIF ELSE BEGIN		
+		ll_data[0]=!X.CRANGE[0]
+		ur_data[0]=!X.CRANGE[1]
+	ENDELSE
+	IF !Y.TYPE EQ 1 THEN BEGIN
+		ll_data[1]=10^!Y.CRANGE[0]
+		ur_data[1]=10^!Y.CRANGE[1]
+	ENDIF ELSE BEGIN		
+		ll_data[1]=!Y.CRANGE[0]
+		ur_data[1]=!Y.CRANGE[1]
+	ENDELSE		
+	ll_dev=CONVERT_COORD(ll_data,/DATA,/TO_DEVICE)
+	ur_dev=CONVERT_COORD(ur_data,/DATA,/TO_DEVICE)		
+
+	IF KEYWORD_SET(XDATA) THEN BEGIN
+		tmp=CONVERT_COORD([x,ll_dev[1]],/DATA,/TO_DEVICE)
+		x_dev=tmp[0]
+	ENDIF ELSE x_dev=ll_dev[0]+x*(ur_dev[0]-ll_dev[0])
+	IF KEYWORD_SET(YDATA) THEN BEGIN
+		tmp=CONVERT_COORD([ll_dev[0],y],/DATA,/TO_DEVICE)
+		y_dev=tmp[1]
+	ENDIF ELSE BEGIN
+		IF y GE 0 THEN y_dev=ll_dev[1] ELSE y_dev=ur_dev[1]
+		IF KEYWORD_SET(dy_char) THEN dy_char=!D.Y_CH_SIZE*dy_char*FLOAT(charsize) ELSE dy_char=!D.Y_CH_SIZE*1.1*FLOAT(charsize) 
+		y_dev=y_dev+y*dy_char	
+	ENDELSE
+
+	IF KEYWORD_SET(LINE) THEN BEGIN
+		IF datatype(LINE) EQ 'INT' AND LINE EQ 1 THEN LINE=0.1
+		linedx_dev=LINE*(ur_dev[0]-ll_dev[0])	;*FLOAT(charsize)		
+		PLOTS,[x_dev,x_dev+linedx_dev],[y_dev,y_dev], /DEVICE, color=color, linestyle=style, psym=psym
+		XYOUTS,x_dev+1.2*linedx_dev,y_dev,text, /DEVICE, color=color, charsize=charsize	
+	ENDIF ELSE XYOUTS, x_dev, y_dev, text, /DEVICE, color=color, charsize=charsize
+END

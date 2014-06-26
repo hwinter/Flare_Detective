@@ -1,0 +1,140 @@
+
+
+FUNCTION psh_obs_movie_make_cube, mainfiles, hedc_code, obs_time_intv=obs_time_intv, min_nbr_counts=min_nbr_counts, NOFRAMENBR=NOFRAMENBR, drange=drange, EIT=EIT
+			
+	basecmd='rsh hercules java -cp ".:/global/hercules/users/hedc/dm/classes/dm.jar:/global/hercules/users/hedc/dm/classes/sc_lib.jar::/global/hercules/users/shilaire/HEDC/util" '
+	cmd=basecmd+'query1 S12_HLE_CODE eq '+hedc_code+' F04_HLE_XPOS'
+	SPAWN,cmd,res,err
+	IF res[0] EQ '' THEN hessi_FOV=[[[-1000.,1000]],[[-1000,1000]]] ELSE BEGIN
+		xpos=FLOAT(res[0])
+		cmd=basecmd+'query1 S12_HLE_CODE eq '+hedc_code+' F04_HLE_YPOS'
+		SPAWN,cmd,res,err
+		IF res[0] EQ '' THEN hessi_FOV=[[[-1000.,1000]],[[-1000,1000]]] ELSE hessi_FOV=[[xpos+[-100.,100]],[FLOAT(res[0])+[-100.,100]]]		
+	ENDELSE
+
+IF NOT KEYWORD_SET(obs_time_intv) THEN BEGIN
+	cmd=basecmd+'query1 S12_HLE_CODE eq '+hedc_code+' DAT_HLE_STARTDATE'
+	SPAWN,cmd,res,err
+	IF res[0] NE '' THEN BEGIN
+		stime=res[0]
+		cmd=basecmd+'query1 S12_HLE_CODE eq '+hedc_code+' DAT_HLE_ENDDATE'
+		SPAWN,cmd,res,err
+		IF res[0] NE '' THEN BEGIN 
+			obs_time_intv=anytim([stime,res[0]])
+		ENDIF
+	ENDIF
+ENDIF
+
+	loadct,1
+	rainbow_linecolors
+	basesize=300
+	charsize=0.7
+
+;get Obs. Summ. countrates (corrected).
+	oso=hsi_obs_summary()
+	oso->set,obs_time_interval=obs_time_intv
+	osrates=(oso->getdata()).COUNTRATE
+	ostimes=oso->getdata(/xaxis)
+	OBJ_DESTROY,oso
+
+;get TRACE all-FOV lightcurve...
+	FOV=-1
+	trace_FOV
+	bad_ss='asd'
+	FOR i=0L,N_ELEMENTS(mainfiles)-1 DO BEGIN
+		fits2map,mainfiles[i],mainmap		
+		IF datatype(mainfiles) EQ 'STC' THEN BEGIN
+			addtracelc=TOTAL(SMOOTH(mainmap.DATA,5))	
+				;sub_map,mainmap,smap,xrange=xrange,yrange=yrange
+				;addtracelc=TOTAL(SMOOTH(smap.DATA,5))	
+			IF i EQ 0 THEN tracetimes=anytim(mainmap.time) ELSE tracetimes=[tracetimes,anytim(mainmap.time)]
+			IF i EQ 0 THEN tracelc=addtracelc ELSE tracelc=[tracelc,addtracelc]
+	
+			;check whether TRACE and HESSI have overlapping FOV at any point:
+			trace_FOV=[[mainmap.xc+mainmap.dx*N_ELEMENTS(mainmap.data[*,0])*[-0.5,0.5]],[mainmap.yc+mainmap.dy*N_ELEMENTS(mainmap.data[0,*])*[-0.5,0.5]]]
+			IF (has_overlap(hessi_FOV[*,0],trace_FOV[*,0]) AND has_overlap(hessi_FOV[*,1],trace_FOV[*,1])) THEN FOV=hessi_FOV
+		ENDIF ELSE BEGIN
+			IF datatype(bad_ss) EQ 'STR' THEN bad_ss=i ELSE bad_ss=[bad_ss,i]
+		ENDELSE
+	ENDFOR
+IF datatype(bad_ss) NE 'STR' THEN mainfiles=array_delete(mainfiles,bad_ss)
+
+;decision on FOV to use...
+	IF N_ELEMENTS(FOV) EQ 1 THEN BEGIN
+		IF N_ELEMENTS(trace_FOV) GT 1 THEN BEGIN
+			xrange=trace_FOV[*,0]
+			yrange=trace_FOV[*,1]
+		ENDIF ELSE BEGIN
+			xrange=[-1000,1000]
+			yrange=[-1000,1000]
+		ENDELSE
+			;I'd rather use the TRACE FOV..., for each TRACE image... (in case the telescope jumps around the Sun...)
+	ENDIF ELSE BEGIN
+		xrange=FOV[*,0]
+		yrange=FOV[*,1]
+	ENDELSE
+
+;main business...
+	psh_win,2*basesize,basesize
+cube='bla'
+
+	FOR i=0L,N_ELEMENTS(mainfiles)-1 DO BEGIN
+
+	;plotting images
+		!P.MULTI=[0,2,1]
+		fits2map,mainfiles[i],mainmap
+
+		IF KEYWORD_SET(EIT) THEN BEGIN
+			IF EIT GE 2 THEN BEGIN
+				eit_prep,mainfiles[i],outheader,outimage,/no_calibrate	;,/no_index,/no_roll
+				index2map,outheader,outimage,mainmap
+			ENDIF
+		ENDIF
+		IF mainmap.ROLL_ANGLE eq -180. THEN BEGIN
+			PRINT,'.......psh_trace_hessi_movie_make_cube.pro: ROLL_ANGLE is -180! Suspect problem. Putting it to 0...'
+			mainmap.ROLL_ANGLE=0
+			ROLL_ANGLE_PROBLEM=1
+		ENDIF
+		mainmap=map2earth(mainmap)
+
+		IF KEYWORD_SET(drange) THEN BEGIN
+			DMIN=MIN(mainmap.DATA)+drange[0]*(MAX(mainmap.DATA)-MIN(mainmap.DATA))
+			DMAX=MIN(mainmap.DATA)+drange[1]*(MAX(mainmap.DATA)-MIN(mainmap.DATA))
+		ENDIF ELSE BEGIN
+			DMIN=MIN(mainmap.DATA)
+			DMAX=MAX(mainmap.DATA)
+		ENDELSE
+
+		plot_map,mainmap,bottom=8,/LOG,xrange=xrange,yrange=yrange,xtitle='',ytitle='',grid=10,/LIMB,xmar=[5,0],ymar=[2,2],/ISO,charsize=charsize,DMIN=DMIN,DMAX=DMAX
+		
+		IF exist(ROLL_ANGLE_PROBLEM) THEN label_plot,/RIGHT,0.95,-1.2,'ROLL_ANGLE=-180->0'
+		
+	;plotting lightcurves/spg...
+		!P.MULTI=[2,2,2,0,1]
+		clear_utplot
+
+		utplot,ostimes,TOTAL(osrates[0:1,*],1),timerange=obs_time_intv,color=1,ytit='Cts/s/det',/YLOG,yr=[1,10000],xtit='',xstyle=1,xmar=[8,1],ymar=[2,1],charsize=charsize
+		outplot,ostimes,osrates[2,*],color=2
+		outplot,ostimes,TOTAL(osrates[3:4,*],1),color=3
+		outplot,ostimes,TOTAL(osrates[5:*,*],1),color=5
+		
+		plot_label,/NOLINE,/DEV,[0.03,-1],'3-12 keV',color=1,charsize=charsize
+		plot_label,/NOLINE,/DEV,[0.03,-2],'12-25 keV',color=2,charsize=charsize
+		plot_label,/NOLINE,/DEV,[0.03,-3],'25-100 keV',color=3,charsize=charsize
+		plot_label,/NOLINE,/DEV,[0.03,-4],'0.1-17 MeV',color=5,charsize=charsize
+		label_plot,0.975,-1.1,/RIGHT,'RHESSI'
+		
+		;adding TRACE lc & boundaries...
+		utplot,tracetimes[i],tracelc,timerange=obs_time_intv,color=4,ytit='DN',xtit='',xstyle=1,xmar=[8,1],ymar=[2,1],charsize=charsize,psym=-7,yr=minmax(tracelc)*[0.9,1.1],ystyle=1	;,/YLOG
+		IF !Y.TYPE EQ 0 THEN traceminmax=!Y.CRANGE ELSE traceminmax=10^!Y.CRANGE
+		PLOTS,/DATA,[1,1]*anytim(mainmap.time)-0.5*mainmap.dur,traceminmax,linestyle=2
+		PLOTS,/DATA,[1,1]*anytim(mainmap.time)+0.5*mainmap.dur,traceminmax,linestyle=2		
+		IF KEYWORD_SET(EIT) THEN label_plot,0.975,-2,/RIGHT,'EIT' ELSE label_plot,0.975,-2,/RIGHT,'TRACE' 
+		label_plot,0.975,1.3,/RIGHT,STRN(i)
+
+		IF datatype(cube) EQ 'STR' THEN cube=TVRD() ELSE cube=[[[cube]],[[TVRD()]]]
+		PRINT,'Completed: '+strn(100.*(i+1)/N_ELEMENTS(mainfiles))
+	ENDFOR
+RETURN,cube
+END
+

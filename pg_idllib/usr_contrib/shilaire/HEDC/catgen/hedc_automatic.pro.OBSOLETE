@@ -1,0 +1,126 @@
+; on saturn:
+;	hedc_automatic,['2002/04/25 00:00:00','2002/04/30 23:59:59'],newdatadir='~/NEWHEDCDATA/',rejected_list_file='~/rejected_flares.list'
+;						newdatadir='/global/hercules/data1/hedc/data/products/NEWHEDCDATA/'
+;	then import using the JAVA routine...
+;
+;
+
+;;;;;;;;;;;;;;;;;;;;;;TEST:
+;;;;hedc_solar_event,'2002/02/26 '+['10:20:00','10:50:00'],/BREAK,/APPROX,/ZBUFFER,newdatadir=GETENV('HEC_ROOT')+'/NEWDATA/',nbrsources=-9999,/COARSE_FULLSUN
+;;;;PRINT,'IDL-OK'
+;;;;FLUSH,-1
+;;;;END
+;=====================================================================================================================================================================================
+;=====================================================================================================================================================================================
+;=====================================================================================================================================================================================
+;=====================================================================================================================================================================================
+;HEDC event generation from flare list...
+
+PRO hedc_automatic, time_intv, newdatadir=newdatadir, rejected_list_file=rejected_list_file
+
+IF NOT KEYWORD_SET(newdatadir) THEN newdatadir=GETENV('HEC_ROOT')+'/NEWDATA/'
+IF NOT KEYWORD_SET(rejected_list_file) THEN rejected_list_file=GETENV('HEC_ROOT')+'/logs/rejected_flares.list'
+
+PRINT,anytim(time_intv,/ECS)
+
+oso=hsi_obs_summary()
+	oso->set,obs_time_interval=time_intv	
+	rates_struct=oso->getdata()
+	rates=rates_struct.COUNTRATE
+	IF datatype(rates) EQ 'BYT' THEN rates=hsi_obs_summ_decompress(rates)
+	times=oso->getdata(/time)
+	flagdata_struct=oso->getdata(class_name='obs_summ_flag')
+	flagdata=flagdata_struct.FLAGS
+	flagtimes=oso->getdata(class_name='obs_summ_flag',/time)
+
+	ephtimes=oso->getdata(class_name='ephemeris',/time)
+	eph_struct=oso->getdata(class_name='ephemeris')
+	ephdata=eph_struct.XYZ_ECI
+	tmp=eci2geographic(ephdata[0:2,*],ephtimes)
+        magcoord=geo2mag(tmp[0:1,*])
+       
+OBJ_DESTROY,oso
+HEAP_GC
+
+flo=hsi_flare_list()	
+flo->set,obs_time_interval=time_intv
+fl=flo->getdata()
+;flinfo=flo->get()
+OBJ_DESTROY,flo
+HEAP_GC
+
+IF datatype(fl) NE 'STC' THEN BEGIN
+	PRINT,'.........No flares in the flare list for that time interval. Aborting now.'
+	GOTO,THEEND
+ENDIF
+
+nbrtried=0
+nbrdone=0
+FOR j=0,N_ELEMENTS(fl)-1 DO BEGIN
+	doit=1	; doit =2 is for minimal event creation.
+	
+;flare list checks
+	IF fl[j].FLAGS[8] NE 0 THEN doit=0			;check for NON_SOLAR flag...
+	IF fl[j].PEAK_COUNTRATE LT 50 THEN doit=2		;count rate deemed big enough ?		;2002/09/10 created
+	IF fl[j].PEAK_COUNTRATE LT 10 THEN doit=0		;count rate deemed big enough ?		;2002/09/10 modified from 40 to 10
+
+;obs. summ. flags checks
+	ss=WHERE(flagtimes GE fl[j].PEAK_TIME)
+	ss=ss[0]
+;	IF flagdata[0,ss] NE 0 THEN doit=0			; check for SAA at peak time
+;	IF flagdata[1,ss] NE 0 THEN doit=0			; check for NIGHT at peak time
+;	IF flagdata[16,ss] NE 0 THEN doit=0			; check for NON_SOLAR at peak time
+;	IF flagdata[17,ss] NE 0 THEN doit=0			; check for GAP at peak time	
+
+;obs. summ. increasing geomagnetic latitude check
+	ss_os=WHERE(times GE fl[j].PEAK_TIME)
+	ss_os=ss_os[0]
+	ss_eph=WHERE(ephtimes GE fl[j].PEAK_TIME)
+	ss_eph=ss_eph[0]
+	
+	IF abs(magcoord[0,ss_eph]) GE 40. THEN BEGIN
+		IF TOTAL(rates[0:1,ss]) LT 500. THEN doit=2
+;		IF TOTAL(rates[0:1,ss]) LT 100. THEN doit=0
+	ENDIF
+
+	IF doit NE 0 THEN BEGIN
+		nbrtried=nbrtried+1
+		es=0
+		CATCH,es
+		IF es NE 0 THEN BEGIN
+			es=0
+			PRINT,'...............................CAUGHT ERROR !......................'
+			HELP, CALLS=caller_stack
+			PRINT, 'Error index: ', es
+			PRINT, 'Error message:', !ERR_STRING
+			PRINT,'Error caller stack:',caller_stack
+			HELP, /Last_Message, Output=theErrorMessage
+			FOR k=0,N_Elements(theErrorMessage)-1 DO PRINT, theErrorMessage[k]
+			GOTO,LABEL01					
+		ENDIF
+				
+		PRINT,'...................Doing '+anytim(/ECS,fl[j].peak_time)+' ................'
+		IF doit EQ 2 THEN PRINT,'.................... (MINIMUM) ......................'
+		hedc_solar_event,[fl[j].START_TIME,fl[j].END_TIME],STD=2-doit,MINIMUM=doit-1,/ZBUFFER,newdatadir=newdatadir,backgndtime=[fl[j].BCK_TIME[0],fl[j].BCK_TIME[1]-30],/REMOVE_FROM_HEDC
+
+		nbrdone=nbrdone+1				
+		LABEL01:
+		CATCH,/CANCEL
+		HEAP_GC
+	ENDIF ELSE BEGIN
+		OPENW,lun,rejected_list_file,/GET_LUN,/APPEND
+		PRINTF,lun,'Rejected flarelist entry: '+anytim(fl[j].PEAK_TIME,/ECS)
+		FREE_LUN,lun		
+	ENDELSE
+ENDFOR
+PRINT,'............There were '+strn(N_ELEMENTS(fl))+' flares in the flarelist.'
+PRINT,'............Only '+strn(nbrtried)+' were attempted.'
+PRINT,'............'+strn(nbrdone)+' were completed.'
+
+THEEND:
+PRINT,'IDL-OK'
+
+IDLversion=float(strmid(!version.release,0,3))
+IF IDLversion EQ 5.4 THEN FLUSH,-1
+END
+;=====================================================================================================================================================================================

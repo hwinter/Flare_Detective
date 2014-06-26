@@ -1,0 +1,202 @@
+; PSH 2003/09/19 -- v7
+;
+; PURPOSE:
+;  This script determines the HXR bremsstrahlung emitted by an injection electron distribution in a thick target.
+; If keyword 'Estar' is used, it disables (of course) the 'il' keyword (puts it to 1.), and applies a correction due to a unit step ionization level.
+; /ALBEDO correction might not be the very best there is...
+;
+; KEYWORD INPUTS:
+;	Eph: photon array. If undefined, will be defaulted to 0.5+DINDGEN(100)
+;	/EARTH: computes photon spectrum [ph/s/cm^2/keV] as seen on Earth, rather than near Sun [ph/s/keV]
+;	/LOUD:
+;	il: ionization level (from 0. to 1.) if not set, 1. is assumed. If Estar is used, this keyword becomes irrelevant.
+;	targetT: temperature of the target (if not cold), in keV
+;	Estar: [keV] if used, assumes a unit step ionization level (Kontar et al., 2003), where the column depth where this occurs is reached by electrons of energy Estar or higher.
+;	/ALBEDO: will add albedo corrections to the photon spectrum, according to (Alexander & Brown, 2003)
+;	thermal: 2-d array [T,EM], where T in keV and EM in 10^49 cm^-3 units. A thermal component is added to the photon spectrum...
+;	E0max: `high-energy cutoff' in the electron power-law. 
+;	PTS: input to the INT_2D IDL function (default is 96). If /RIEMANN was also set, this transforms into the number of points for RIEMANN (INT_TABULATED) summation over all energy interval [1,E0max] (default: 100:never found a case where a larger value gave a significantly better result...).
+;	/SCREENING: will activate the /SCREENING keyword in the NR BH brems. cross-section (i.e. keyword is useless if /HAUG is set!) (LOW-ENERGY EFFECT!!!)
+;	/HAUG: will use the Haug cross-section (i.e. SSW's brm_bremcross.pro) instead of the NR BH brem. cross-section.
+;	/KRAMER: will use the Kramer cross-section
+;	/BETHEBLOCH: will use the quantum-relativistic Bethe-Bloch formula (valid at all energies except maybe in the ultra-relativistic ones (LONGAIR)) instead of its NR formulation.
+;	/RIEMANN: will use Riemann summations (i.e. IDL's INT_TABULATED): time-consuming, but this method is the least sensitive to weird (`unsmooth', or discontinuous) electron spectra...
+;	boundaries: (1-d array of energies in keV) for use with gaussian quadratures (i.e. when /RIEMANN not set): integration boundaries to use (i.e where electron spectrum is `smooth'). Ex: [1,20,3000]
+;			This keyword is not necessary when the electron spectrum is `smooth enough' over the whole integration interval (Eph[0] to E0max).
+;	el_spectrum: a STRUCTURE of electron spectrum characteristics:
+;		if nothing (default): standard power-law, with spectral index delta=4, A50=1.295e33 el/s/keV
+;		if tag_exist(delta): electron spectral index
+;		if tag_exist(A): electron spectrum normalization factor at 1 keV
+;		if tag_exist(A50): electron spectrum normalization factor at 50 keV
+;		if tag_exist(Eto): electron spectrum has a turn-over (i.e. flattens) below Eto keV.
+;		if tag_exist(Ebump): electron spectrum has a bump-on-tail below Ebump keV.
+;		if tag_exist(Eco): electron spectrum has a cutoff below Eco keV.
+;		if tag_exist(thermal): 2-d array. Electron spectrum has an additional thermal component at thermal[0] keV, containing a total of thermal[1]*1e38 electrons/s
+;		
+;		For now, Eto/Ebump/Eco should not be used together!
+;
+;EXAMPLES:
+;	sp=forward_spectrum_thick(/EARTH,Eph=Eph,/LOUD)			;CHECK: this should yield F_50 = 2.18 ph/s/cm^2/keV (LANG 4.393)
+;	sp=forward_spectrum_thick(/EARTH,Eph=Eph,/LOUD,el={delta:4,Eco:20},bound=[1,20,3000])
+;	PLOT,Eph,sp,/XLOG,/YLOG,xtit='photon energy [keV]',ytit='[photons s!U-1!N cm!U-2!N keV!U-1!N]',xr=[1,100]
+;
+;	sp=forward_spectrum_thick(/EARTH,Eph=Eph,/LOUD,el={thermal:[10.,0.01],A:0})
+;	sp=forward_spectrum_thick(/EARTH,Eph=Eph,/LOUD,el={A:0},thermal=[10.,1.])
+;
+;		TO COMPARE WITH THEORETICAL RESULTS:
+;		Ae=1.
+;		delta=4d
+;		sp=forward_spectrum_thick(/EARTH,Eph=Eph,/LOUD,el={delta:delta,A:Ae},/RIEMANN)
+;		F=1.5537e-34 * BETA(delta-2,0.5)/(delta-1)/(delta-2) * Ae * Eph^(-delta+1)
+;		PLOT,Eph,sp/F,/XLOG
+;			;sp=forward_spectrum_thick(/EARTH,Eph=Eph,/LOUD,bound=[0.1,1,10,100,1000,10000],E0max=1e4) seems to yield !perfect! results at all delta (at least in the 1-100 keV band)...
+;			;sp=forward_spectrum_thick(/EARTH,Eph=Eph,/LOUD,E0max=1e4,/RIEMANN) does also!!!
+;
+;COMMENTS:
+;	This version was updated from v3. To counter problems arising from not sufficiently smooth functions,
+;   	integration is done over smooth parts! Be sure to use 'boundaries' keyword, which is a 1-D array containing the bounds of integration.
+;	This is of course not needed when using the /RIEMANN option...
+;	SO FAR, the RIEMANN thing yields ~perfect results at the low photon energies, the INT_2D's are ~better at the highest photon energies...
+;
+;HISTORY:
+;	2003/07/03: added keyword /HAUG: uses HAUG crosssection instead of Bethe-Heitler NR cross-section (3BN(a) of Koch & Motz,1959)
+;	2003/09/10: rewritten in a nice, user-friendly and documented way.
+;	2003/09/13: added keyword /KRAMER
+;	2003/09/14: added keyword /BETHEBLOCH
+;	2003/09/19: for RIEMANN summations: logarithmically-spaced intervals... a lot better results. Duration increases with PTS^2 !
+;
+;--------------------------------------------------------------------------------------------
+;--------------------------------------------------------------------------------------------
+FUNCTION forward_spectrum_thick__brm_crosssection, E
+	COMMON FS_COMMON, FS_PARAMS, A
+
+	CASE FS_PARAMS.BREMCROSS OF 
+		1:BEGIN
+			;HAUG (at least SSW's cross-section)
+			brm_bremcross,E,FS_PARAMS.curEph,1.2,res
+			ss=WHERE(FINITE(res,/NaN) EQ 1)
+			IF ss[0] NE -1 THEN res[ss]=0d
+			res=res/510.98d
+		END
+		2:BEGIN
+			;KRAMER's cross-section
+			res=1.44*7.9e-25/FS_PARAMS.curEph/E			
+		END		
+		ELSE: BEGIN
+			;NR BH corss-section (Koch&Mott 3BN(a))
+			res=DBLARR(N_ELEMENTS(E))
+			ss=WHERE(E GT FS_PARAMS.curEph)
+			IF ss[0] NE -1 THEN FOR i=0L,N_ELEMENTS(ss)-1 DO res[ss[i]]=betheheitler_brm_crosssection(E[ss[i]],FS_PARAMS.curEph,SCREENING=FS_PARAMS.SCREENING)	
+		END
+	ENDCASE
+	RETURN,res
+END
+;----------------------------------------------------------------------------------------------------
+;--------------------------------------------------------------------------------------------
+FUNCTION forward_spectrum__number_of_photons__compute, E0, n_pts
+	COMMON FS_COMMON, FS_PARAMS, A
+
+	IF E0 LE FS_PARAMS.curEph THEN RETURN,0d
+	;linear spacing:
+	;E=DINDGEN(n_pts+1)*(E0-FS_PARAMS.curEph)/n_pts + FS_PARAMS.curEph
+	;log spacing:
+	E=FS_PARAMS.curEph*(E0/FS_PARAMS.curEph)^(DINDGEN(n_pts+1)/n_pts)
+	y=forward_spectrum_thick__brm_crosssection(E)/E/collisional_energy_loss_crosssection(E,FS_PARAMS.il,T=FS_PARAMS.targetT,BETHEBLOCH=FS_PARAMS.COLLCROSS)
+	RETURN,INT_TABULATED(E,y,/DOUBLE)
+END
+;--------------------------------------------------------------------------------------------
+;---------------------------------------------------------------------------------------------------
+FUNCTION forward_spectrum_thick__electron_injection, E0		; F0(E0) in [electrons.s^-1.keV^-1]
+	COMMON FS_COMMON, FS_PARAMS, FS_INJECTION	
+	
+	delta=FS_INJECTION.delta
+	dN50dt=FS_INJECTION.A50
+	IF E0 LT 0D THEN RETURN,0D
+	res=dN50dt*(E0/50D)^(-delta)
+	IF E0 LT FS_INJECTION.Eto THEN res=dN50dt*(FS_INJECTION.Eto/50)^(-delta)
+	IF E0 LT FS_INJECTION.Ebump THEN res=E0/FS_INJECTION.Ebump*dN50dt*(FS_INJECTION.Ebump/50)^(-delta)	;seems that bump yields a photon spectrum just slightly lower than  urn-over... no big surprise, there...
+	IF E0 LT FS_INJECTION.Eco THEN res=0d
+
+	;thermal population...
+	;v1: Ftot*exp(-E0/kT)/kT	(EMSLIE)
+	;v2: Ftot*E0*exp(-E0/kT)/(kT^2)	(PSH)
+	IF FS_INJECTION.thermal[0] GT -1 THEN res=res + FS_INJECTION.thermal[1]*E0*exp(-E0/FS_INJECTION.thermal[0])/(FS_INJECTION.thermal[0])^2 * 1e38
+
+	RETURN, res
+END
+;----------------------------------------------------------------------------------------------------
+FUNCTION forward_spectrum_thick__integrand, E,E0
+	COMMON FS_COMMON, FS_PARAMS, A
+	RETURN, forward_spectrum_thick__electron_injection(E0)*forward_spectrum_thick__brm_crosssection(E)/E/collisional_energy_loss_crosssection(E,FS_PARAMS.il,T=FS_PARAMS.targetT,BETHEBLOCH=FS_PARAMS.COLLCROSS)
+END
+;---------------------------------------------------------------------------------------------------
+;---------------------------------------------------------------------------------------------------
+FUNCTION forward_spectrum_thick__PQlimits, E
+	COMMON FS_COMMON, FS_PARAMS, A
+	RETURN, [FS_PARAMS.curEph,E]
+END
+;---------------------------------------------------------------------------------------------------
+;---------------------------------------------------------------------------------------------------
+FUNCTION forward_spectrum_thick,EARTH=EARTH,LOUD=LOUD, il=il, targetT=targetT, Estar=Estar, ALBEDO=ALBEDO, thermal=thermal, Eph=Eph, E0max=E0max, PTS=PTS, boundaries=boundaries, SCREENING=SCREENING, HAUG=HAUG, KRAMER=KRAMER, RIEMANN=RIEMANN,el_spectrum=el_spectrum, BETHEBLOCH=BETHEBLOCH
+
+	COMMON FS_COMMON, FS_PARAMS, FS_INJECTION
+	FS_PARAMS={FS_PARAMS, LOUD:0, il:-1d, targetT:-1d, E0max:-1d, curEph:-1d, SCREENING:0, BREMCROSS:0, COLLCROSS:0}
+	FS_INJECTION={delta:4d,A50:1.295e33,Eto:-1d,Ebump:-1d,Eco:-1d,thermal:[-1d,-1d]}
+
+	IF KEYWORD_SET(LOUD) THEN FS_PARAMS.LOUD=LOUD ELSE FS_PARAMS.LOUD=0
+	IF KEYWORD_SET(SCREENING) THEN FS_PARAMS.SCREENING=1 ELSE FS_PARAMS.SCREENING=0
+	IF EXIST(il) THEN FS_PARAMS.il=DOUBLE(il) ELSE FS_PARAMS.il=1d
+	IF EXIST(targetT) THEN FS_PARAMS.targetT=DOUBLE(targetT)
+	IF EXIST(Estar) THEN FS_PARAMS.IL=1d
+	IF EXIST(E0max) THEN FS_PARAMS.E0max=DOUBLE(E0max) ELSE BEGIN
+		IF KEYWORD_SET(RIEMANN) THEN FS_PARAMS.E0max=1e4 ELSE FS_PARAMS.E0max=1e4
+	ENDELSE
+	IF NOT EXIST(Eph) THEN Eph=DINDGEN(100)+0.5
+	IF NOT EXIST(PTS) THEN IF KEYWORD_SET(RIEMANN) THEN PTS=100 ELSE PTS=96		;allowed values for PTS in INT_2D.pro: 6,10,20,48,96
+	IF KEYWORD_SET(HAUG) THEN FS_PARAMS.BREMCROSS=1
+	IF KEYWORD_SET(KRAMER) THEN FS_PARAMS.BREMCROSS=2
+	IF KEYWORD_SET(el_spectrum) THEN BEGIN
+		IF tag_exist(el_spectrum,'delta') THEN FS_INJECTION.delta=el_spectrum.delta
+		IF tag_exist(el_spectrum,'A50') THEN FS_INJECTION.A50=el_spectrum.A50
+		IF tag_exist(el_spectrum,'A') THEN FS_INJECTION.A50=el_spectrum.A/50^FS_INJECTION.delta
+		IF tag_exist(el_spectrum,'Eto') THEN FS_INJECTION.Eto=el_spectrum.Eto
+		IF tag_exist(el_spectrum,'Ebump') THEN FS_INJECTION.Ebump=el_spectrum.Ebump
+		IF tag_exist(el_spectrum,'Eco') THEN FS_INJECTION.Eco=el_spectrum.Eco
+		IF tag_exist(el_spectrum,'thermal') THEN FS_INJECTION.thermal=el_spectrum.thermal		
+	ENDIF
+	IF KEYWORD_SET(BETHEBLOCH) THEN FS_PARAMS.COLLCROSS=1
+
+	tmp=Eph[1]-Eph[0]
+	Eph_edges=TRANSPOSE([[Eph-tmp/2.],[Eph+tmp/2.]])
+	sp=DBLARR(N_ELEMENTS(Eph))
+	
+	FOR i=0L,N_ELEMENTS(Eph)-1 DO BEGIN
+		IF KEYWORD_SET(LOUD) THEN PRINT,'Doing Eph= '+strn(Eph[i])+' keV'
+		FS_PARAMS.curEph=Eph[i]
+		
+		IF KEYWORD_SET(RIEMANN) THEN BEGIN
+			;uses INT_TABULATED
+			sp[i]=0d
+			E0=Eph[i]
+			E_arr=E0*(FS_PARAMS.E0max/E0)^(DINDGEN(PTS+1)/PTS)
+			FOR j=0L,PTS-1 DO sp[i]=sp[i]+(E_arr[j+1]-E_arr[j])*0.5*( forward_spectrum_thick__electron_injection(E_arr[j])*forward_spectrum__number_of_photons__compute(E_arr[j],PTS) + forward_spectrum_thick__electron_injection(E_arr[j+1])*forward_spectrum__number_of_photons__compute(E_arr[j+1],PTS))
+		ENDIF ELSE BEGIN
+			;uses INT_2D
+			IF NOT KEYWORD_SET(boundaries) THEN sp[i]=INT_2D('forward_spectrum_thick__integrand',[Eph[i],FS_PARAMS.E0max],'forward_spectrum_thick__PQlimits',PTS,/DOUBLE,/ORDER) $
+			ELSE BEGIN
+				FOR j=0L,N_ELEMENTS(boundaries)-2 DO BEGIN
+					IF has_overlap([Eph[i],FS_PARAMS.E0max],[boundaries[j],boundaries[j+1]],inter=inter) THEN sp[i]=sp[i]+INT_2D('forward_spectrum_thick__integrand',inter,'forward_spectrum_thick__PQlimits',PTS,/DOUBLE,/ORDER)
+				ENDFOR
+			ENDELSE
+		ENDELSE
+	ENDFOR
+
+	; sp currently in [photons s^-1 kev^-1]
+	D=499D * 29979245800D	;[cm] Sun-Earth distance
+	IF KEYWORD_SET(EARTH) THEN sp=sp/(4*!dPI*D^2)	; sp now in [photons s^-1 cm^-2 kev^-1]
+	IF EXIST(Estar) THEN sp=sp*kontar_ionization_correction(Eph, FS_INJECTION.delta, Estar=DOUBLE(Estar))
+	IF KEYWORD_SET(ALBEDO) THEN sp=sp*alexander_albedo_correction(Eph,FS_INJECTION.delta-1.)
+	IF KEYWORD_SET(thermal) THEN sp=sp+mewe_kev(DOUBLE(thermal[0])*11.594,Eph_edges,/EDGES,/photon,/kev,earth=EARTH)*DOUBLE(thermal[1])*1e5	; add thermal bremsstrahlung component...(thermal[0] is temprature in keV, thermal[1] is EM in 10^49 cm^-3 units)
+	RETURN,sp
+END
+;--------------------------------------------------------------------------------------------

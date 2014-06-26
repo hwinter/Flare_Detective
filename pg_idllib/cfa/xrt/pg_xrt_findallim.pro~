@@ -1,0 +1,168 @@
+;+
+; NAME:
+;
+;   PG_XRT_FINDALLIM
+;
+; PURPOSE:
+;
+;   Use this program to find the set of *all* images taken by XRT with a given
+;   filter, size, binning in a givent time interval
+;
+; CATEGORY:
+;
+;   XRT UTILS
+;
+; CALLING SEQUENCE:
+;
+;  filenamelist=pg_xrt_findallim(time_intv=time_intv,fw1=fw1,fw2=fw2,vls=vls, $
+;                                xsize=xsize,ysize=ysize,binning=binning,catdir=catdir)
+;
+; INPUTS:
+;
+;
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+; AUTHOR:
+;
+; Paolo Grigis, pgrigis@cfa.harvard.edu
+;
+; MODIFICATION HISTORY:
+;
+; 17-MAR-2008 written
+;
+;-
+
+FUNCTION pg_xrt_findallim,time_intv=in_time_intv,fw1=fw1,fw2=fw2,vls=in_vls, $
+                          xsize=xsize,ysize=ysize,binning=binning,catdir=catdir, $
+                          sirius=sirius,imtype=imtype
+
+
+  catdir=fcheck(catdir,'~/machd/catidlsaveformat/')
+
+  IF NOT exist(sirius) THEN sirius=1 
+  siroffset=sirius EQ 0 ? 'nosir' : ''
+
+  IF n_elements(in_time_intv) NE 2 THEN BEGIN 
+     now=anytim(!stime)
+     xrtstart=anytim('01-OCT-2006')
+     time_intv=[xrtstart,now]
+  ENDIF $
+  ELSE BEGIN 
+     time_intv=anytim(in_time_intv)
+  ENDELSE
+
+  IF NOT exist(imtype) THEN imtype=0;0normal, 1 dark
+
+  IF NOT exist(fw1) THEN fw1='Al_poly'
+  IF NOT exist(fw2) THEN fw2='Open'
+
+  fw1names=['Open','Al_poly','C_poly','Be_thin','Be_med','Al_med']
+  fw2names=['Open','Al_mesh','Ti_poly','Gband','Al_thick','Be_thick']
+
+  fw1num=where(fw1 EQ fw1names,countfw1)
+  fw2num=where(fw2 EQ fw2names,countfw2)
+  
+  IF countfw1+countfw2 NE 2 THEN RETURN,-1
+
+  IF NOT exist(in_vls) THEN vls=0 ELSE vls=1
+
+  IF NOT exist(xsize) THEN xsize=2048
+  IF NOT exist(ysize) THEN ysize=2048
+
+  IF NOT exist(binning) THEN binning=1
+
+
+  startyear =(anytim(time_intv[0],/ex))[6]
+  startmonth=(anytim(time_intv[0],/ex))[5]
+  endyear   =(anytim(time_intv[1],/ex))[6]<2049
+  endmonth  =(anytim(time_intv[1],/ex))[5]
+
+  IF startmonth LE 6 THEN thisyearfraction='a' ELSE thisyearfraction='b'
+  IF endmonth   LE 6 THEN endyearfraction ='a' ELSE endyearfraction ='b'
+
+  thisyear=startyear
+  filelist=['']
+
+  WHILE NOT ((thisyear EQ endyear) AND (thisyearfraction EQ endyearfraction)) DO BEGIN 
+
+     filelist=[filelist,'cat'+strtrim(thisyear,2)+thisyearfraction+siroffset+'.sav']
+
+     IF thisyearfraction EQ 'a' THEN thisyearfraction='b' ELSE BEGIN 
+        thisyearfraction='a'
+        thisyear++
+     ENDELSE 
+
+  ENDWHILE
+
+  filelist=[filelist,'cat'+strtrim(thisyear,2)+thisyearfraction+siroffset+'.sav']
+  filelist=filelist[1:n_elements(filelist)-1]
+
+  ;print,filelist
+
+  FOR i=0,n_elements(filelist)-1 DO BEGIN 
+
+     IF file_exist(catdir+filelist[i]) THEN BEGIN 
+        restore,catdir+filelist[i]
+
+        ;implement check
+
+        IF siroffset EQ 'nosir' THEN chipsum=round(cat.cdelt1) ELSE chipsum=cat.chip_sum
+
+        ind=where(cat.ec_fw1   EQ fw1num[0]  AND $
+                  cat.ec_fw2   EQ fw2num[0]  AND $
+                  cat.ec_vl    EQ vls        AND $
+                  cat.naxis1   EQ xsize      AND $
+                  cat.naxis2   EQ ysize      AND $
+                  chipsum      EQ binning    AND $
+                  cat.ec_imtyp EQ imtype         ,count)
+
+   
+        print,filelist[i],count
+     
+        IF count GT 0 THEN BEGIN 
+           IF n_elements(result) EQ 0 THEN result=files[ind] ELSE result=[result,files[ind]]
+        ENDIF
+
+     ENDIF
+
+  ENDFOR
+
+  RETURN,n_elements(result) GT 0 ? result : -1
+
+END
+
+

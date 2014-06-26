@@ -1,0 +1,138 @@
+;+
+; NAME:
+;
+; pg_read_noaa_eventlist
+;
+; PURPOSE:
+;
+; read the event from a NOAA eventlist file, selecting the GOES
+; events
+;
+; CATEGORY:
+;
+; file I/O solar
+;
+; CALLING SEQUENCE:
+;
+; data=pg_read_noaa_eventlist,date
+;
+; INPUTS:
+;
+; date: a date, in any format accepted by anytim
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; AUTHOR: 
+;
+; Paolo Grigis, CfA
+; pgrigis@cfa.harvard.edu
+;
+; MODIFICATION HISTORY:
+;
+; 10-SEP-2007 written
+;
+;-
+
+FUNCTION pg_read_noaa_eventlist,date,basdir=basdir
+
+eventtype='XRA' ;both condition are satisfied for
+eventfreq='1-8A';goes flares!
+
+basdir=fcheck(basdir,'~/work/noaa_event_reports/')
+
+thedate=anytim(date,/ex,/date_only)
+
+year=smallint2str(thedate[6])
+month=smallint2str(thedate[5],strlen=2)
+day=smallint2str(thedate[4],strlen=2)
+
+thedate=anytim(date,/date_only)
+
+filename=basdir+year+'/'+year+month+day+'events.txt'
+
+IF NOT file_exist(filename) THEN RETURN,-1
+
+starttime=0d
+endtime=0d
+
+; Open the text file:  
+OPENR, lun, filename, /GET_LUN  
+
+line = ''
+  
+; While there is text left, read it
+WHILE ~ EOF(lun) DO BEGIN  
+
+   READF, lun, line
+
+   firstchar=strmid(line,0,1)
+
+;   print,firstchar
+
+   ;events start with an ASCII number
+   IF byte(firstchar) GE 48B AND byte(firstchar) LE 57B THEN BEGIN 
+
+      type=strmid(line,43,3)
+      wvl=strmid(line,48,4)
+
+      IF type EQ eventtype AND $
+         wvl  EQ eventfreq THEN BEGIN 
+           
+            starttime=[starttime,thedate+anytim(strmid(line,11,4))]
+            endtime  =[endtime,thedate+anytim(strmid(line,28,4))]
+
+      ENDIF
+  
+   ENDIF
+
+
+;   print,line
+  
+ENDWHILE  
+  
+; Close the files and deallocate the units:  
+FREE_LUN, lun
+
+n_events=n_elements(starttime)-1
+
+IF n_events EQ 0 THEN RETURN,-1
+
+RETURN,transpose([[starttime[1:n_events]],[endtime[1:n_events]]])
+
+END
+
+

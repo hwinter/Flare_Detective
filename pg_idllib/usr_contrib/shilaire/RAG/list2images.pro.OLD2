@@ -1,0 +1,491 @@
+;list2images : takes a .list with dates, converts them, and makes spectrograms (I & V)
+;called by the UNIX batch file 'ragbursts2images'
+;
+;***************  P. Saint-Hilaire 2001/09/29 created   ********************************
+;			shilaire@astro.phys.ethz.ch OR psainth@hotmail.com
+;---------------------------------------------------------------------------------------
+
+;**************************************************************************************************************************
+; First, some useful routines from Andre Csillaghy/Peter Messmer (sometimes modified by me ...) ***************************
+;**************************************************************************************************************************
+PRO Merge, im1, im2, xAxis1, xAxis2, yAxis1, yAxis2, $
+	im, xAxis, yAxis, ADJUST = adjust
+
+  nx1 = N_Elements( xAxis1 ) & nx2 = N_Elements( xAxis2 )
+  ny1 = N_Elements( yAxis1 ) & ny2 = N_Elements( yAxis2 )
+
+  IF nx1 GT nx2 THEN BEGIN
+    xAxis = xAxis1
+    nxBoth = nx1
+    IF Keyword_Set( ADJUST ) THEN $
+      im2 = ConGrid1D( im2, nxBoth, ny2 ) 
+  ENDIF ELSE  BEGIN
+    xAxis = xAxis2
+    nxBoth = nx2
+    IF Keyword_Set( ADJUST)  THEN $
+      im1 = ConGrid1D( im1, nxBoth, ny1 )
+  ENDELSE
+
+  yAxis = [ yAxis1, yAxis2 ]
+  nyBoth = ny1 + ny2
+
+  im = FltArr( nxBoth, nyBoth )
+  im(0, 0) = im1
+  im(0, ny1) = im2
+
+END ; Merge images  
+
+;******************************************************************************
+PRO my_backsub, image, xaxis, AbsoluteAnyStartTime, BACKGROUNDTIME, backavg=backavg
+ print, "Background subtraction"
+ ;image = constbacksub_V21(image, 0, n_elements(image(*,0))-1,'X', /AUTO )
+ ;image = constbacksub_V21(image, 0,299,'X')	; first 30 secs of constant backgnd, assuming 0.1 sec per time bin
+
+ ss_endbckgnd=WHERE(xaxis GT (AbsoluteAnyStartTime+BACKGROUNDTIME))
+ ss_endbckgnd=ss_endbckgnd(0)
+ image = constbacksub_V21(image, 0,ss_endbckgnd ,'X', background=background)
+ backavg = avg(background,0)
+	; backavg is the average of the background that was subtracted from 'image'. 
+	; For background subtraction done on a log image, it is a measure of the basic
+	; quantity  one must add to 'image' before linearization, in order to have
+	; real physical units (i.e. SFUs).
+	; I can think of a couple really better ways to obtain the min/max values (in SFUs),
+	; but they are both time (my own)-consuming and computer-intensive. Maybe later ?
+END
+;******************************************************************************
+PRO qv_elimwrong, image, xaxis, yaxis 
+ print, "Eliminating wrong channels"
+ image_old = image
+ xaxis_old = xaxis
+ yaxis_old = yaxis
+ ElimWrongChannels, image, xaxis, yaxis
+ if n_elements(image(0,*)) le 1 then begin 
+    print, "Restoring original image"
+    image = image_old
+    xaxis = xaxis_old
+    yaxis = yaxis_old
+ endif
+END
+
+
+
+;***********************************************************************************************************************
+;**************************************************************************************************************************
+;**********************   Now, routines entirely by PSH.... ************************************************************************
+;**************************************************************************************************************************
+;**************************************************************************************************************************
+
+
+;******************************************************************************
+PRO write_add_info,STOKES=STOKES,DATE=DATE,datalimits=datalimits
+
+CharSize=1.0
+
+XYOUTS,/dev,580,493,'ETH Zurich',CHARSIZE=CharSize
+XYOUTS,/dev,580,478,'Switzerland',CHARSIZE=CharSize
+XYOUTS,/dev,580,463,'Phoenix-2 spectrometer',CHARSIZE=CharSize
+
+XYOUTS,/dev,740,2,'UT'
+XYOUTS,/dev,10,195,'Frequency [MHz]',ORIENTATION=90
+
+IF exist(DATE) THEN XYOUTS,/dev,60,490,DATE,CHARSIZE=CharSize*1.5
+IF exist(STOKES) THEN BEGIN
+	XYOUTS,/dev,75,460,'STOKES '+STOKES,CHARSIZE=CharSize*1.5
+	IF STOKES EQ 'I' THEN BEGIN
+		IF not exist(datalimits) THEN BEGIN
+			XYOUTS,/dev,220,458,'MIN.',CHARSIZE=CharSize*0.85
+			XYOUTS,/dev,520,458,'MAX.',CHARSIZE=CharSize*0.85
+		ENDIF ELSE BEGIN
+			XYOUTS,/dev,330,458,'SFUs (log scale)',CHARSIZE=CharSize*0.85
+			temp=datalimits		;conversion already done	;10^(datalimits/45.) -10.	; convert to SFUs
+			XYOUTS,/dev,220,458,STRN(temp(0),format='(f7.1)'),CHARSIZE=CharSize*0.85
+			XYOUTS,/dev,520,458,STRN(temp(1),format='(f7.1)'),CHARSIZE=CharSize*0.85
+		ENDELSE
+	ENDIF
+	IF STOKES EQ 'V' THEN BEGIN
+		IF not exist(datalimits) THEN BEGIN
+			XYOUTS,/dev,220,458,'LEFT',CHARSIZE=CharSize*0.85
+			XYOUTS,/dev,520,458,'RIGHT',CHARSIZE=CharSize*0.85
+		ENDIF ELSE BEGIN
+			XYOUTS,/dev,290,458,'% POLARIZATION (NEGATIVE = LEFT)',CHARSIZE=CharSize*0.85
+			XYOUTS,/dev,220,458,STRN(datalimits(0),format='(f7.1)'),CHARSIZE=CharSize*0.85
+			XYOUTS,/dev,520,458,STRN(datalimits(1),format='(f7.1)'),CHARSIZE=CharSize*0.85
+		ENDELSE
+
+
+	ENDIF	
+ENDIF
+
+END
+;******************************************************************************
+
+;******************************************************************************
+FUNCTION return_time_interval_of_ragfile,ragfile
+; this function is valid until the year 7000... :)
+; ragfile can have a path
+; RESTRICTIONS : I assume duration is 15 minutes... not always true !!!!!!!!
+
+lastslashpos=STRPOS(ragfile,'/',/REVERSE_SEARCH)
+basicfilename=STRMID(ragfile,lastslashpos+1)
+
+;if basicfilename starts by 7,8, or 9 it means I have to add 19 in front for the time...
+timename=basicfilename
+firstchar=STRMID(timename,0,1)
+if ((firstchar eq '7') OR (firstchar eq '8') OR (firstchar eq '9')) then timename='19'+timename
+
+time_part=STRMID(timename,8)
+time_part='_'+time_part
+STRPUT,timename,time_part,8
+timeintv=file2time(timename,out_style='ECS')
+timeintv=anytim(timeintv)
+timeintv=[timeintv,timeintv+15.*60.]	; OK, here I assume the duration is 15 minutes.
+RETURN,anytim(timeintv,/ECS)
+END
+;******************************************************************************
+;******************************************************************************
+FUNCTION return_rag_files,time_interval,valid_file_identifiers=valid_file_identifiers
+; this function should work for any rag fits after 1978 (excl.)
+if not exist(valid_file_identifiers) then valid_file_identifiers=['*l1.fit.gz','*i.fit.gz','*p.fit.gz']	;this thing should always have at least one element !
+
+time_interval=anytim(time_interval)
+
+;some constants
+dir_time_interval=3600.*24.	;	the lowest possible directory levels are 1 day long
+rag_root='/global/helene/local/rag/observations/'
+
+;initialize output
+ragfile=-1
+
+;get the list of absolute directory paths to be checked (chronological)
+dirlist=-1
+currentdatetime=time_interval(0)
+enddatetime=time_interval(1)
+while (currentdatetime le enddatetime) do begin
+	bla=anytim(currentdatetime,/EX)
+	bla=rag_root+int2str(bla(6),4)+'/'+int2str(bla(5),2)+'/'+int2str(bla(4),2)+'/'
+	if datatype(dirlist) eq 'INT' then dirlist=bla else dirlist=[dirlist,bla]
+	currentdatetime=currentdatetime+dir_time_interval
+endwhile
+
+if datatype(dirlist) eq 'INT' then return,-1	;
+
+;now, for EACH directory in dirlist, get filelist, and check if within time_interval
+filelist=-1
+for i=0,n_elements(dirlist)-1 do begin
+	bla=findfile(dirlist(i)+'*')
+
+	; now, for each filename in bla, check if ends with correct possible identifiers,
+	; and append to filelist
+
+	for j=0,n_elements(valid_file_identifiers)-1 do begin
+		temp=WHERE(STRMATCH(bla,valid_file_identifiers(j),/FOLD_CASE) eq 1)
+		if temp(0) ne -1 then begin
+			temp=bla(temp)
+			if datatype(filelist) eq 'INT' then filelist=temp else filelist=[filelist,temp]
+		endif
+	endfor
+endfor
+
+; now, check which ones are in the correct time interval, and return them...
+if datatype(filelist) eq 'INT' then RETURN,-1
+	
+for i=0,n_elements(filelist)-1 do begin
+	if has_overlap(time_interval,anytim(return_time_interval_of_ragfile(filelist(i)))) then begin
+		if datatype(ragfile) eq 'INT' then ragfile=filelist(i) ELSE ragfile=[ragfile,filelist(i)]
+	endif
+endfor
+return,ragfile
+END
+;******************************************************************************
+
+
+
+;******************************************************************************
+FUNCTION rag_extract_from_list,file,beforetime=beforetime, aftertime=aftertime
+	;some initialization
+	list=-1
+	ligne='abc'
+	if not exist(beforetime) then beforetime=30.	; time added before burst interval, in seconds
+	if not exist(aftertime) then aftertime=30.		; time added after burst interval, in seconds
+	beforetime=FLOAT(beforetime)
+	aftertime=FLOAT(aftertime)
+			
+	IF not file_exist(file) then print,'!!!!!!!!! NEW BURSTS FILE LIST WAS NOT FOUND : '+file+' !!!!!!!!!!!!!!' ELSE begin
+		OPENR,lun1,file,/GET_LUN
+		readf,lun1,ligne
+		IF ligne EQ 'There are new bursts to image:' then begin		
+			WHILE eof(lun1) EQ 0 do begin
+				readf,lun1,ligne
+				bla=RSI_STRSPLIT(ligne,/EXTRACT)
+				IF n_elements(bla) GT 1 then begin	;happens I don't have a burst for the whole day...
+			    	temp=STRMID(bla(0),0,2) & temp=FIX(temp)
+					IF temp GE 0 then year=STRN(2000+temp) ELSE year=STRN(1900+temp)
+					temp=STRMID(bla(0),2,2) & temp=FIX(temp)
+					month=STRN(temp)
+					temp=STRMID(bla(0),4,2) & temp=FIX(temp)
+					day=STRN(temp)
+					starttime=3600.*DOUBLE(STRMID(bla(1),0,2))+60.*DOUBLE(STRMID(bla(1),2))
+					endtime=3600.*DOUBLE(STRMID(bla(2),0,2))+60.*DOUBLE(STRMID(bla(2),2))
+					
+					newitem = year+'/'+month+'/'+day+' '+ms2hms([starttime, endtime]*1000.)
+					newitem = ANYTIM(newitem)
+					newitem = newitem+[-beforetime,aftertime]
+					newitem = ANYTIM(newitem,/ECS)
+					if datatype(list) EQ 'INT' then list=newitem else list=[list,newitem]
+				ENDIF
+			ENDWHILE
+		ENDIF
+		CLOSE,lun1,/FORCE
+	ENDELSE
+	return,list	; in ANYTIM format...
+END
+
+
+
+;***********************************************************************************************************************************
+;***********************************************************************************************************************************
+;***********************************  MAIN  ****************************************************************************************
+;***********************************************************************************************************************************
+;***********************************************************************************************************************************
+;-----------------------------------------------------------------------------------------------------------------------------------
+;first, some important constants:
+
+TODO=0				;set to 0 to do both Stokes I and V
+					;set to 1 to do ONLY Stokes I
+					;set to 2 to do ONLY Stokes V
+
+LOGBACKSUB=1		; set to 0 for backgnd subtraction on linear image (most realistic one)
+					; set to 1 for backgnd subtraction on log image
+					;	(this of course only concerns STOKES I images)
+
+INVERT=1			; set this to 0 to constbacksub, THEN elimwrongchannels
+					; set this to 1 to elimwrongchannels, THEN constbacksub
+
+BEFORETIME =	60.	; seconds before burst time, from where background is starting to be accumulated
+BACKGROUNDTIME= 30.	; seconds to be considered as background, starting at bursttime-BEFORETIME , cannot be greater than BEFORETIME
+ADDIMAGETIME =  30.	; seconds before & after burst to image and display, cannot be greater than BEFORETIME
+
+CENTERPOL = 1		; set to 0 to display polarization data as is.
+					; set to 1 to center polarization image around zero, with range = +/- max(abs(image))	[with a bit of cheating!]
+					; set to 2 to center polarization image around zero, with range = +/- 100%	[with a bit of cheating!]
+					
+!QUIET=1
+;-----------------------------------------------------------------------------------------------------------------------------------
+; now, let's rock'n'roll !
+;***********************************************************************************************************************************
+SET_PLOT, 'Z', /COPY				; Kuddos for the Z-Buffer !!!!
+DEVICE, SET_RESOLUTION=[768,512]
+ERASE
+
+;the following line is done so that ticks appear in the images (not needed with PS device) - a bug I never figured out in show_image...
+plot,[0,1],[2,3]
+
+BEFORETIME=FLOAT(BEFORETIME)
+BACKGROUNDTIME=FLOAT(BACKGROUNDTIME)
+ADDIMAGETIME=FLOAT(ADDIMAGETIME)
+
+; some checks:
+BACKGROUNDTIME = BACKGROUNDTIME < BEFORETIME
+ADDIMAGETIME = ADDIMAGETIME < BEFORETIME
+
+
+print,'.......................Extracting bursts time intervals from the list.'
+intervallist = rag_extract_from_list(getenv('LOG_DIR')+'/newragbursts.list',beforetime=BEFORETIME,aftertime=ADDIMAGETIME)	;in ANYTIM format...
+IF datatype(intervallist) EQ 'INT' then begin
+	print,'!!!!!!!!!!!!!! NO NEW BURSTS !!!!!!!!!!!!!!!!!!'
+	EXIT,/NO_CONFIRM,STATUS=1
+ENDIF
+nbursts=N_ELEMENTS(intervallist)/2
+
+print,'.......................Number of new bursts: '+STRING(nbursts)
+
+FOR i=0,nbursts-1 do begin
+	time_interval=[intervallist(2*i),intervallist(2*i+1)]
+	print,'............... Doing burst : ',time_interval
+	
+	IF TODO NE 2 THEN BEGIN
+		;do l1 and i files (Linear polarization or STOKES I) ---------------------------------------------------------------------------------------
+		ragfiles=return_rag_files(time_interval,valid_file_identifiers=['*l1.fit*','*i.fit*'])
+		loadct,1	;BLUE-WHITE
+		tvlct,r,g,b,/GET
+		
+		nb_files=N_ELEMENTS(ragfiles)
+		IF nb_files EQ 0 THEN PRINT,'......................No intensity (Stokes I or l1) rag fits files for this burst!' $
+		ELSE begin
+			PRINT,'.............................DOING STOKES I or LINEAR 1.'
+			ragfitsread,ragfiles(0),image,xaxis,yaxis,/SILENT
+			IF nb_files GT 1 THEN begin
+				FOR j=1,nb_files-1 DO begin
+					ragfitsread,ragfiles(j),img,xax,yax,/SILENT
+					Merge, Transpose(image), Transpose(img), $
+						yaxis, yax, xaxis, xax, $
+						newimage, newyaxis, newxaxis,/ADJUST 
+					image = Transpose(newimage)
+					xaxis=newxaxis
+					yaxis=newyaxis
+				ENDFOR
+			ENDIF
+	
+			;take the parts starting and ending at correct times from burststart-BEFORETIME to burstend+ADDIMAGETIME
+			ss_start=WHERE(xaxis GT (anytim(time_interval(0),/time_only)))
+			ss_start=ss_start(0)
+			ss_end=WHERE(xaxis GT (anytim(time_interval(1),/time_only)))
+			ss_end=ss_end(0)
+			image=image(ss_start:ss_end,*)
+			xaxis=xaxis(ss_start:ss_end)		
+			print,'Raw image, from BurstStart-BEFORETIME to BurstEnd+ADDIMAGETIME:'
+			print,'MIN: '+STRING(min(image))
+			print,'MAX: '+STRING(max(image))
+		
+			IF LOGBACKSUB EQ 0 THEN BEGIN
+				image = 10^(image/45.) - 10.		; so we're with a linear image in SFUs
+				print,'Linearized (SFUs):'
+				print,'MIN: '+STRING(min(image))
+				print,'MAX: '+STRING(max(image))	
+			ENDIF
+		
+			ERASE
+
+			IF INVERT EQ 0 THEN BEGIN
+				my_backsub, image, xaxis, anytim(time_interval(0),/TIME_ONLY), BACKGROUNDTIME, backavg=backavg
+				qv_elimwrong, image, xaxis, yaxis
+			ENDIF ELSE BEGIN
+				qv_elimwrong, image, xaxis, yaxis
+				my_backsub, image, xaxis, anytim(time_interval(0),/TIME_ONLY), BACKGROUNDTIME, backavg=backavg
+			ENDELSE
+					
+			;take the parts starting and ending at correct times from burststart-ADDIMAGETIME to burstend+ADDIMAGETIME
+			ss_start=WHERE(xaxis GT (anytim(time_interval(0)+BEFORETIME-ADDIMAGETIME,/time_only)))
+			ss_start=ss_start(0)
+			image=image(ss_start:n_elements(xaxis)-1,*)
+			xaxis=xaxis(ss_start:n_elements(xaxis)-1)
+	
+			datamin = min(image, max=datamax)
+			print,'After background subtraction, bad channels removal and taking only relevant part of image (near burst +/- ADDIMAGETIME):'
+			IF LOGBACKSUB EQ 0 THEN PRINT,'(SFUs)'
+			print,'MIN: '+STRING(datamin)
+			print,'MAX: '+STRING(datamax)		
+	
+			IF LOGBACKSUB EQ 0 THEN BEGIN
+				image=alog(TEMPORARY(image)-datamin+1.)	;for display purposes, I'd rather have a log scale...
+				print,' After putting things back into a log scale:'
+				print,'LOG MIN: '+STRING(min(image))
+				print,'LOG MAX: '+STRING(max(image))
+			ENDIF ELSE BEGIN
+				datamin = 10^((datamin+backavg)/45.) - 10.
+				datamax = 10^((datamax+backavg)/45.) - 10.
+				print,' Those values translate roughly to (in SFUs):'
+				print,'MIN: '+STRING(datamin)
+				print,'MAX: '+STRING(datamax)
+			ENDELSE
+			
+			ERASE
+			z_show_image,image,xaxis,yaxis,/hms,imageoffset=0, $
+				XPOS=70,YPOS=35,xsize=768,ysize=512
+			IF LOGBACKSUB EQ 0 THEN write_add_info,STOKES='I',DATE=ANYTIM(time_interval(0),/ECS,/DATE_ONLY),datalimits=[datamin,datamax] $
+			ELSE write_add_info,STOKES='I',DATE=ANYTIM(time_interval(0),/ECS,/DATE_ONLY),datalimits=[datamin,datamax]
+			; whereas the displayed SFU values when LOGBACKSUB=0 are actually background-subtracted,
+			; those for when LOGBACKSUB=1 AREN'T.
+			img=tvrd(ORDER=0)
+			temp = ANYTIM(time_interval(0),/EX)
+			year = temp(6)
+			write_gif,getlog('IMAGE_DIR')+STRN(year)+'/Phoenix-2_'+time2file(time_interval(0)+BEFORETIME,/seconds)+'_I.gif',img,r,g,b			
+		ENDELSE
+	ENDIF		
+
+
+	IF TODO NE 1 THEN BEGIN
+		;do p files	(STOKES V)-----------------------------------------------------------------------------------------
+		ragfiles=return_rag_files(time_interval,valid_file_identifiers='*p.fit*')
+		loadct,6	;PRISM color table
+		tvlct,r,g,b,/GET
+			r(255)=255
+			g(255)=255
+			b(255)=255
+			tvlct,r,g,b	
+	
+		nb_files=N_ELEMENTS(ragfiles)	
+		IF nb_files EQ 0 THEN PRINT,'......................No polarisation rag fits files for this burst!' $
+		ELSE begin
+			PRINT,'.............................DOING STOKES V.'
+			ragfitsread,ragfiles(0),image,xaxis,yaxis,/SILENT
+			IF nb_files GT 1 THEN begin
+				FOR j=1,nb_files-1 DO begin
+					ragfitsread,ragfiles(j),img,xax,yax,/SILENT
+					Merge, Transpose(image), Transpose(img), $
+						yaxis, yax, xaxis, xax, $
+						newimage, newyaxis, newxaxis,/ADJUST 
+					image = Transpose(newimage)
+					xaxis=newxaxis
+					yaxis=newyaxis
+				ENDFOR
+			ENDIF	
+	
+			;take the parts starting and ending at correct times from burststart-BEFORETIME to burstend+ADDIMAGETIME
+			ss_start=WHERE(xaxis GT (anytim(time_interval(0),/time_only)))
+			ss_start=ss_start(0)
+			ss_end=WHERE(xaxis GT (anytim(time_interval(1),/time_only)))
+			ss_end=ss_end(0)
+			image=image(ss_start:ss_end,*)	
+			xaxis=xaxis(ss_start:ss_end)		
+			print,'Raw image, from BurstStart-BEFORETIME to BurstEnd+ADDIMAGETIME:'
+			print,'MIN: '+STRING(min(image))
+			print,'MAX: '+STRING(max(image))
+	
+			ERASE		
+
+			IF INVERT EQ 0 THEN BEGIN
+				my_backsub, image, xaxis, anytim(time_interval(0),/TIME_ONLY), BACKGROUNDTIME
+				qv_elimwrong, image, xaxis, yaxis
+			ENDIF ELSE BEGIN
+				qv_elimwrong, image, xaxis, yaxis
+				my_backsub, image, xaxis, anytim(time_interval(0),/TIME_ONLY), BACKGROUNDTIME
+			ENDELSE
+			
+			;take the parts starting and ending at correct times from burststart-ADDIMAGETIME to burstend+ADDIMAGETIME
+			ss_start=WHERE(xaxis GT (anytim(time_interval(0)+BEFORETIME-ADDIMAGETIME,/time_only)))
+			ss_start=ss_start(0)
+			image=image(ss_start:n_elements(xaxis)-1,*)	
+			xaxis=xaxis(ss_start:n_elements(xaxis)-1)
+			
+			datamin = min(image, ss, max=datamax)	; this is in %polarization (negative = left)
+			print,'Now, after backgnd subtraction & bad channels removal, , polarization data has the following range: '
+			print,'MIN: '+STRING(min(image))
+			print,'MAX: '+STRING(max(image))
+			
+			IF CENTERPOL EQ 1 THEN BEGIN
+				boundary = max([abs(datamin),abs(datamax)])
+				datamin = -boundary
+				datamax = boundary
+				image(n_elements(xaxis)-1,0) = -boundary		; OK, this is a very benign cheat....
+				image(n_elements(xaxis)-1,n_elements(yaxis)-1) = boundary
+			ENDIF ELSE BEGIN
+				IF CENTERPOL EQ 2 THEN BEGIN
+					datamin = -100.
+					datamax = 100.
+					image(n_elements(xaxis)-1,0)=-100.		; Hey! This is also a very benign cheat....
+					image(n_elements(xaxis)-1,n_elements(yaxis)-1)=100.
+				ENDIF
+			ENDELSE
+				
+			ERASE
+			z_show_image,image,xaxis,yaxis,/hms,imageoffset=0,$
+				XPOS=70,YPOS=35,xsize=768,ysize=512
+			write_add_info,STOKES='V',DATE=ANYTIM(time_interval(0),/ECS,/DATE_ONLY),datalimits=[datamin,datamax]
+			img=tvrd(ORDER=0)
+			temp = ANYTIM(time_interval(0),/EX)
+			year = temp(6)		
+			write_gif,getlog('IMAGE_DIR')+STRN(year)+'/Phoenix-2_'+time2file(time_interval(0)+BEFORETIME,/seconds)+'_V.gif',img,r,g,b					
+		ENDELSE			
+	ENDIF
+ENDFOR
+
+DEVICE, /CLOSE 
+
+print,'.............. FINISHED WITHOUT BREAK ERRORS................'
+print,'IDL-OK'
+END
+
+
+
+

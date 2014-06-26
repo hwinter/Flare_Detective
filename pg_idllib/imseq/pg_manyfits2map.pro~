@@ -1,0 +1,95 @@
+;+
+; NAME:
+;
+;    pg_manyfits2map  
+;
+; PURPOSE:
+;
+;    general purpose FITS solar maps reader: transform an array of filenames in
+;    an array of pointers to solar maps.
+;
+; CATEGORY:
+;
+;    
+;
+; CALLING SEQUENCE:
+;
+;
+;
+; INPUTS:
+;
+;
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; MODIFICATION HISTORY:
+;
+;-
+
+
+
+
+;+
+;
+; NAME:
+;        pg_imcube_fits2map
+;
+; PURPOSE: 
+;        reads an image cube FITS file
+;
+;
+; CALLING SEQUENCE:
+;
+;        ans=pg_imcube_fits2map(filename)
+;
+; INPUTS:
+;
+;        filename: FITS file name
+;
+; OUTPUT:
+;
+;        array of pointers to solar maps
+;
+; VERSION:
+;
+;       29-JAN-2007 written
+;
+;
+; AUTHOR
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;       pgrigis@astro.phys.ethz.ch
+;-

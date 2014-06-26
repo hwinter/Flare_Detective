@@ -1,0 +1,44 @@
+
+PRO hedc_5x5_te_panel_plot,imo,times,acctim,	$	
+	dim=dim,charsize=charsize
+
+	IF N_ELEMENTS(times) NE 5 THEN RETURN
+	
+	IF NOT KEYWORD_SET(dim) THEN dim=1000
+	IF NOT KEYWORD_SET(charsize) THEN charsize=2
+	
+	xmar=[1,1]
+	ymar=[1,2]
+		
+	hedc_win,dim,dim
+	hessi_ct
+	!P.MULTI=[0,5,5]
+
+	obs_time_interval=imo->get(/obs_time_interval)
+	t0=anytim(obs_time_interval(0))
+	
+	imo->set_no_screen_output
+	FOR i=0,4 DO BEGIN	
+		CASE i OF
+			0: eband=[3,12]
+			1: eband=[12,25] 
+			2: eband=[25,50]
+			3: eband=[50,100]
+			4: eband=[100,300]	
+		ENDCASE			
+		FOR j=0,4 DO BEGIN
+			tim=anytim(times(j))
+				
+			imo->set,energy_band=eband,time_range=anytim(tim)-t0+acctim*[-0.5,0.5]
+			tmpmap=make_hsi_map(imo)
+			title=anytim(tim-0.5*acctim,/ECS,/trunc,/time)+','+STRN(acctim,format='(f6.1)')+' s.,'+STRN(eband(0))+'-'+STRN(eband(1))+' keV'
+			plot_vel_map,tmpmap,xmar=xmar,ymar=ymar,/iso,/limb,xtitle='',ytitle='',charsize=charsize,/nolabel,title=title		
+			;!!! the previous three lines have been replaced by the following three: 	//PSH 2002/05/01
+			;img=imo->getdata()
+			;info=imo->get()
+			;hsi_image_plot,img,info,info,info.IMAGE_ALGORITHM,mar=0.07,charsize=charsize,/nolabel,title='',xtitle='',ytitle='',/limb
+			
+		ENDFOR
+	ENDFOR			
+	!P.MULTI=0
+END

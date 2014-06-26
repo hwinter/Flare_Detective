@@ -1,0 +1,194 @@
+;+
+;NAME:
+; 	phoenix_spg_get.pro
+;
+;PROJECT:
+; 	ETHZ Radio Astronomy
+;CATEGORY:
+; 	Utility
+;PURPOSE:
+; This routine, given a time interval (anytim format) returns the associated Phoenix data array, 
+; or a string if a problem occured (such as no data available). 
+; The routine may also do basic data processing to improve data visualization, as well as 
+; downloading the necessary Phoenix fits files (starting in June 1998) and installing them in 
+; a local archive.
+;
+;CALLING SEQUENCE:
+;	spg_struct=phoenix_get_spg(time_interval, spg, time_axis, freq_axis, POL=POL, DECOMPRESS=DECOMPRESS, ...)
+;
+;INPUT:
+; 	time_interval : a 2-element array,in a format accepted by ANYTIM
+;
+;KEYWORD INPUT:
+;	data_dir: Directory, or root directory path to Phoenix fits files. If not set, will look for ENV variable 'PHOENIX_DATA_ARCHIVE' to replace it. If 'PHOENIX_DATA_ARCHIVE' also does not exist, will use current work directory.
+;
+;	/SINGLE: If not set, will assume that data_dir is a standard archive root pathname, with yyyy/mm/dd sub-directories. 
+;		If set, simply looks into data_dir for the proper files.
+;
+;	/ALLOW_DOWNLOAD: if set, and the proper files were not found under data_dir, then the fits file(s) is(are) downloaded from ETHZ.
+;		Unless /SINGLE_DIR was also set, will try to put the downloaded files in a standard archive organization under data_dir, with yyyy/mm/dd sub-directories.
+;	
+;	/POL: to get polarization data instead of I/L1/L2 data.
+;
+;	/DECOMPRESS: to obtain data in linear SFU scale (if not already in that format). This keyword has no influence for polarization data.
+;	If this keyword is set and the encoding format is not recognized, the routine returns a string array (fail).
+;	This keyword is set automatically if keyword /PROCESS is used.
+;
+;	/PROCESS: will run the spectrogram into the routine phoenix_spg_improve_basic.pro, which does basic data processing to improve
+;		the spectrogram: automatic background subtraction, automatic removal of bad channels, and despiking. 
+;		The output spectrogram is also LOGed.
+;
+;OUTPUT:
+;	spg_struct: 
+;	 	spg: a Phoenix-2 spectrogram image, in (encoded)  SFU (for intensities, L1, and L2) or % circular polarization (negative = left)
+;		time_axis: anytim time array
+;		freq_axis: frequency array
+;		type: L1, L2, I(ntensity) or P(olarization) (as given by first file in time interval...)
+;
+;KEYWORD OUTPUT:
+;	None
+;
+;RESTRICTIONS:
+;	None ?
+;
+;EXAMPLES:
+;	1) Standard way, with a local archive, and env variable 'PHOENIX_DATA_ARCHIVE' properly set:
+;	spg=phoenix_spg_get('2003/09/03 '+['11:29:00','11:55:00'],/PROCESS)
+;	spectro_plot,spg
+;
+;	2) For casual users (outside ETH) wishing to have all Phoenix fits files in same directory:
+;	spg=phoenix_spg_get('2003/09/03 '+['11:29:00','11:55:00'],/SINGLE_DIR,/ALLOW_DOWNLOAD)
+;
+;	;3) Self-building archive, for users outside ETH:
+;	spg=phoenix_spg_get('2003/09/03 '+['11:29:00','11:55:00'], data_dir='/my/phoenix/data/archive/rootpath',/ALLOW_DOWNLOAD)
+;	;(keyword data_dir need not be used, if an env variable 'PHOENIX_DATA_ARCHIVE' was already properly defined.)
+;
+;HISTORY:
+;	Pascal Saint-Hilaire, 2003/10/07 written, inspired heavily by rapp_get_spectrogram.pro
+;		shilaire@astro.phys.ethz.ch
+;-
+
+;===================================================================================================================================================================================================================
+PRO phoenix_merge, im1, im2, xAxis1, xAxis2, yAxis1, yAxis2, $
+	im, xAxis, yAxis, ADJUST = adjust
+
+  nx1 = N_Elements( xAxis1 ) & nx2 = N_Elements( xAxis2 )
+  ny1 = N_Elements( yAxis1 ) & ny2 = N_Elements( yAxis2 )
+
+  IF nx1 GT nx2 THEN BEGIN
+    xAxis = xAxis1
+    nxBoth = nx1
+    IF Keyword_Set( ADJUST ) THEN $
+      im2 = ConGrid1D( im2, nxBoth, ny2 ) 
+  ENDIF ELSE  BEGIN
+    xAxis = xAxis2
+    nxBoth = nx2
+    IF Keyword_Set( ADJUST)  THEN $
+      im1 = ConGrid1D( im1, nxBoth, ny1 )
+  ENDELSE
+
+  yAxis = [ yAxis1, yAxis2 ]
+  nyBoth = ny1 + ny2
+
+  im = FltArr( nxBoth, nyBoth )
+  im[0, 0] = im1
+  im[0, ny1] = im2
+
+END ; Merge images  
+;===================================================================================================================================================================================================================
+FUNCTION phoenix_spg_get, time_intv, POL=POL, DECOMPRESS=DECOMPRESS, data_dir=data_dir, $
+	SINGLE_DIR=SINGLE_DIR, ALLOW_DOWNLOAD=ALLOW_DOWNLOAD, QUIET=QUIET, PROCESS=PROCESS
+		
+	IF KEYWORD_SET(PROCESS) THEN DECOMPRESS=1
+	
+	;retrieve from db file the list of Phoenix fits files needed.
+	phoenixfiles=phoenix_filedb_get(time_intv,/FILENAME,POL=POL)
+	IF datatype(phoenixfiles) EQ 'INT' THEN RETURN,'No fits data'
+	nb_files=N_ELEMENTS(phoenixfiles)
+	
+	;directory where those files should be located...
+	IF NOT KEYWORD_SET(data_dir) THEN BEGIN
+		IF GETENV('PHOENIX_DATA_ARCHIVE') NE '' THEN data_dir=GETENV('PHOENIX_DATA_ARCHIVE') ELSE CD,cur=data_dir
+	ENDIF
+
+	;main loop
+	FOR i=0L,nb_files-1 DO BEGIN
+		;check whether file is there...		
+		IF KEYWORD_SET(SINGLE_DIR) THEN fullpathname=data_dir+'/'+phoenixfiles[i] ELSE BEGIN
+			timex=anytim(file2time(STRMID(phoenixfiles[i],0,8)+'_'+STRMID(phoenixfiles[i],8,6)),/EX)
+			fullpathname=data_dir+'/'+int2str(timex[6],4)+'/'+int2str(timex[5],2)+'/'+int2str(timex[4],2)+'/'+phoenixfiles[i]
+		ENDELSE					
+		IF NOT file_exist(fullpathname) THEN BEGIN
+			msg='File '+fullpathname+' not found '
+			IF KEYWORD_SET(ALLOW_DOWNLOAD) THEN BEGIN
+				msg=msg+' ... downloading from ETH Zurich...'
+				IF NOT KEYWORD_SET(QUIET) THEN PRINT,msg
+				timex=anytim(file2time(STRMID(phoenixfiles[i],0,8)+'_'+STRMID(phoenixfiles[i],8,6)),/EX)
+				url='www.astro.phys.ethz.ch/rapp/observations/'+int2str(timex[6],4)+'/'+int2str(timex[5],2)+'/'+int2str(timex[4],2)+'/'+phoenixfiles[i]
+				IF KEYWORD_SET(SINGLE_DIR) THEN local_dir=data_dir ELSE BEGIN
+					local_dir=data_dir+'/'+int2str(timex[6],4)+'/'+int2str(timex[5],2)+'/'+int2str(timex[4],2)+'/'
+					IF NOT test_dir(local_dir,QUIET=QUIET) THEN BEGIN
+						IF NOT KEYWORD_SET(QUIET) THEN PRINT,'.... will attempt to create it...'
+						;most probably the dir does not exist... (could also be that it exist, but is not writable...)
+						;make the directory...
+						FILE_MKDIR,local_dir
+					ENDIF
+				ENDELSE
+				sock_copy,url,err=err,out_dir=local_dir
+				IF err NE '' THEN RETURN,'File not downloaded'
+			ENDIF ELSE BEGIN			
+				IF NOT KEYWORD_SET(QUIET) THEN PRINT,msg+'!'
+				RETURN,msg
+			ENDELSE
+		ENDIF
+		
+		;now, do main stuff...
+		radio_spectro_fits_read,fullpathname, newspg, newxaxis, newyaxis, main_header=main_header
+		IF KEYWORD_SET(DECOMPRESS) THEN BEGIN
+			CASE main_header.bunit OF
+	
+				'solar flux units (sfu)': PRINT,main_header.bunit
+	
+				'45*ln10(solar flux units (sfu) + 10)': BEGIN
+					newspg=10^(newspg/45.) - 10
+					PRINT,'Decompressing '+main_header.bunit
+				END
+	
+				'45*alog(solar flux units (sfu)+10)': BEGIN
+					newspg=exp((newspg/45.)) - 10
+					PRINT,'Decompressing '+main_header.bunit
+				END						
+				
+				'% polarization (negative = left)': PRINT,main_header.bunit
+				
+				ELSE: BEGIN
+					PRINT,'......................The encoding format: "'+main_header.bunit+'" is NOT recognized for this file !!!'
+					RETURN,'Encoding not recognized'
+				END		
+			ENDCASE										
+		ENDIF
+			
+		IF i GE 1 THEN BEGIN
+			phoenix_merge, TRANSPOSE(spg), TRANSPOSE(newspg), yaxis, newyaxis, xaxis, newxaxis, newestspg, newestyaxis, newestxaxis,/ADJUST 
+			spg = TRANSPOSE(newestspg)
+			xaxis=newestxaxis
+			yaxis=newestyaxis
+		ENDIF ELSE BEGIN
+			spg=newspg
+			xaxis=newxaxis
+			yaxis=newyaxis
+			spgtype=(phoenix_filedb_get(time_intv[0],/TYPE))[0]
+		ENDELSE
+	ENDFOR
+	
+	; the following takes only the wanted time interval:
+	ss=WHERE( (xaxis GE anytim(time_intv[0])) AND (xaxis LE anytim(time_intv[1])) )	
+	IF ss[0] EQ -1 THEN BEGIN	;I don't see how I could get this far without the proper data... But, just in case...
+		PRINT,'Problem--!'
+		RETURN,'Problem--!'
+	ENDIF
+
+	spgobj={spectrogram:spg[ss,*], x:xaxis[ss], y:yaxis, type:spgtype}
+	IF KEYWORD_SET(PROCESS) THEN spgobj=phoenix_spg_improve_basic(spgobj,/STD)
+	RETURN,spgobj
+END

@@ -1,0 +1,195 @@
+;+
+; NAME:
+;
+; pg_xrtrhessigoes
+;
+; PURPOSE:
+;
+; plot an overview of RHESSI observation times and XRT images time over a GOES lightcurve
+; XRT images are plotted as vertical ticks
+;
+; CATEGORY:
+;
+; solar instruments data quicklooks
+;
+; CALLING SEQUENCE:
+;
+; pg_xrtrhessigoes,time_intv
+;
+; INPUTS:
+;
+; time_intv: a time interval in any forma accepted by anytim
+;
+; OPTIONAL INPUTS:
+;
+; ylog: set the logarithmic scale of the y axis (default is log, ylog=0 sets linear)
+; xrttickh: height of the xrt vertical tick in fraction of the plot height
+; xrttickd: distance from the top of the plot to the vertical tick in fraction of the plot height
+; xrttickcol: color of the xrt tick (default: !p.color)
+;
+; it also accepts all keywords accepted by pg_plotgoes.
+;
+; KEYWORD PARAMETERS:
+;
+; xrt_use_qlook_catalog: if set, uses the quicklook catalog instead of the
+; normal (level 0) catalog. The quicklook catalog should be used for recent
+; (less than 7-10 day old) data.
+
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; AUTHOR:
+;
+; Paolo Grigis, CfA
+; pgrigis@cfa.harvard.edu
+;
+; $Id: pg_xrtrhessigoes.pro 26 2007-12-17 21:02:07Z pgrigis $
+;
+; MODIFICATION HISTORY:
+;
+; 7-SEP-2007 written
+;
+;-
+
+;.comp pg_xrtrhessigoes
+
+PRO pg_xrtrhessigoes,time_intv,ylog=ylog,xrttickh=xrttickh,xrttickd=xrttickd $
+                    ,xrttickcol=xrttickcol,hsicol=hsicol,hsithick=hsithick,hsiy=hsiy $
+                    ,nohsi=nohsi,noxrt=noxrt,_extra=_extra,additionaltime=additionaltime $
+                    ,additionalcolor=additionalcolor,additionalthick=additionalthick,hadd=hadd $
+                    ,cat=cat,plot_color=plot_color,goes_color=goes_color,color=color $
+                    ,xrt_use_qlook_catalog=xrt_use_qlook_catalog
+
+  ylog=fcheck(ylog,1)
+  xrttickh=fcheck(xrttickh,0.1)
+  xrttickd=fcheck(xrttickd,0.1)
+  hsiy=fcheck(hsiy,0.1)
+  goes_color=fcheck(goes_color,!P.color)
+  plot_color=fcheck(plot_color,!P.color)
+  xrttickcol=fcheck(xrttickcol,!P.color)
+  hsicol=fcheck(hsicol,!P.color)
+  hsithick=fcheck(hsithick,3)
+  hadd=fcheck(hadd,0.05)
+  additional=n_elements(additionaltime) EQ 2
+  additionalcolor=fcheck(additionalcolor,!P.color)
+  additionalthick=fcheck(additionalthick,3)
+  use_sirius_catalog=1-fcheck(xrt_use_qlook_catalog,0)
+
+  ;get RHESSI observation times in time_intv
+
+  rhessi_obs_times=pg_hsi_find_obstime(time_intv) 
+
+
+  IF n_elements(rhessi_obs_times) GT 1 THEN BEGIN 
+     IF n_elements(rhessi_obs_times) EQ 2 THEN nhsiobs=1 ELSE nhsiobs=(size(rhessi_obs_times,/dimension))[1]
+  ENDIF ELSE nhsiobs=0
+  IF keyword_set(nohsi) THEN nhsiobs=0
+
+  ;need to check whether RHESSI data access works from here
+
+
+  ;get XRT image time in time_intv
+
+  IF NOT exist(cat) OR size(cat,/type) NE 8 THEN xrt_cat,time_intv[0],time_intv[1],cat,files,sirius=use_sirius_catalog
+
+  IF size(cat,/type) EQ 8 THEN BEGIN  ;structure returned
+     nxrtimages=n_elements(cat)
+  ENDIF ELSE BEGIN 
+     nxrtimages=0
+  ENDELSE
+
+  IF keyword_set(noxrt) THEN nxrtimages=0
+
+  pg_plotgoes,time_intv,ylog=ylog,_extra=_extra,color=plot_color
+  
+
+
+  IF nxrtimages GT 0 THEN BEGIN 
+
+     IF ylog EQ 0 THEN BEGIN 
+        yrange=!Y.crange 
+        dy=max(yrange)-min(yrange)
+        xrtrange=max(yrange)-dy*[xrttickd,xrttickd+xrttickh]
+     ENDIF ELSE BEGIN 
+        yrange=!Y.crange
+        dy=max(yrange)-min(yrange)
+        xrtrange=10^(max(yrange)-dy*[xrttickd,xrttickd+xrttickh])
+     ENDELSE
+
+     xrttimes=anytim(cat.date_obs)
+
+     FOR i=0,nxrtimages-1 DO outplot,xrttimes[i]*[1,1],xrtrange,0,color=xrttickcol
+
+
+  ENDIF
+
+  IF nhsiobs GT 0 THEN BEGIN 
+
+    IF ylog EQ 0 THEN BEGIN 
+        yrange=!Y.crange 
+        y=max(yrange)-min(yrange)
+        hsid=min(yrange)+hsiy*y
+     ENDIF ELSE BEGIN 
+        yrange=!Y.crange
+        y=max(yrange)-min(yrange)
+        hsid=10^(min(yrange)+hsiy*y)
+     ENDELSE
+
+     IF nhsiobs EQ 1 THEN outplot,rhessi_obs_times,hsid*[1,1],0,color=hsicol,thick=hsithick ELSE BEGIN 
+
+        FOR i=0,nhsiobs-1 DO BEGIN 
+           outplot,(rhessi_obs_times[*,i]),hsid*[1,1],0,color=hsicol,thick=hsithick
+        ENDFOR
+
+     ENDELSE
+
+  ENDIF
+
+  IF additional THEN BEGIN 
+
+   IF ylog EQ 0 THEN BEGIN 
+        yrange=!Y.crange 
+        y=max(yrange)-min(yrange)
+        hsid=min(yrange)+hadd*y
+     ENDIF ELSE BEGIN 
+        yrange=!Y.crange
+        y=max(yrange)-min(yrange)
+        hsid=10^(min(yrange)+hadd*y)
+     ENDELSE
+     
+     outplot,additionaltime,hsid*[1,1],0,color=additionalcolor,thick=additionalthick
+
+  ENDIF
+
+  pg_plotgoes,time_intv,/overplot,_extra=_extra,color=goes_color
+
+
+END 
+
+

@@ -1,0 +1,193 @@
+; MODs:
+;	PSH 2005/02/18: V2: Added comparison with GOES events time intervals: For better choices of time ranges...
+;
+;
+; on saturn:
+;	hedc_solar_automatic,['2002/04/25 00:00:00','2002/04/30 23:59:59'],newdatadir='~/NEWHEDCDATA/',rejected_list_file='~/rejected_flares.list'
+;						newdatadir='/global/hercules/data1/hedc/data/products/NEWHEDCDATA/'
+;	
+;	hedc_solar_automatic,['2002/08/13 05:25:00','2002/09/01 23:59:00'],newdatadir='/global/hercules/data1/hedc/data/products/NEWHEDCDATA/',rejected_list_file='~/rejected_flares.list'
+;	hedc_solar_automatic,'2002/07/23 '+['00:00','01:00'],newdatadir='/global/hercules/users/shilaire/NEWHEDCDATA/',/DEBUG
+;	hedc_solar_automatic,'2002/02/26 '+['10:25','10:30'],newdatadir='/ftp/pub/hedc/fs/data1/hedc/data/products/NEWHEDCDATA/',/NOREPLACE
+;	hedc_solar_automatic,'2002/02/20 '+['11:00','11:10'],newdatadir='/ftp/pub/hedc/fs/data1/hedc/data/products/NEWHEDCDATA/',/DEBUG
+;	hedc_solar_automatic,'2002/04/21 '+['01:20','01:40'],newdatadir='/ftp/pub/hedc/fs/data1/hedc/data/products/NEWHEDCDATA/',/DEBUG
+;	hedc_solar_automatic,'2003/10/24 '+['02:00','03:00'],newdatadir='/ftp/pub/hedc/fs/data1/hedc/data/products/NEWHEDCDATA/',/DEBUG
+;
+;	hedc_solar_automatic2,['2003/06/11 12:00','2003/06/12'],/GOESmin,newdatadir='/ftp/pub/hedc/fs/data1/hedc/data/products/NEWHEDCDATA/'
+;
+;	................then import using the JAVA routine...
+;
+;DEBUGGING TEST:
+;	hedc_solar_automatic,'2002/02/26 '+['10:25','10:30'],newdatadir='~/HEDC/NEWDATA/',rejected_list_file='~/rejected_flares.list',/DEBUG
+;	hedc_solar_automatic,'2002/04/21 '+['00:00','23:59'],newdatadir='~/HEDC/NEWDATA/',rejected_list_file='~/rejected_flares.list',/NOREPLACE
+;	hedc_solar_automatic,'2003/08/29 '+['07:30','08:00'],newdatadir='~/HEDC/NEWDATA/',rejected_list_file='~/rejected_flares.list',/DEBUG
+;	hedc_solar_automatic,'2003/10/24 '+['02:20','02:50'],newdatadir='/ftp/pub/hedc/fs/data1/hedc/data/products/NEWHEDCDATA/',/DEBUG
+;	hedc_solar_automatic,'2002/02/20 '+['11:00','11:10'],newdatadir='/ftp/pub/hedc/fs/data1/hedc/data/products/NEWHEDCDATA/',/DEBUG
+;	hedc_solar_automatic,'2004/02/01 '+['06:00','06:10'],newdatadir='/ftp/pub/hedc/fs/data1/hedc/data/products/NEWHEDCDATA/',/DEBUG
+;	hedc_solar_automatic,'2004/07/26 '+['23:50','23:59'],newdatadir='/ftp/pub/hedc/fs/data1/hedc/data/products/NEWHEDCDATA/',/DEBUG
+;
+;	hedc_solar_automatic2,'2003/10/31 '+['16:40','17:30'],newdatadir='/ftp/pub/hedc/fs/data1/hedc/data/products/NEWHEDCDATA/',/DEBUG
+;	hedc_solar_automatic2,'2002/02/20 '+['11:00','11:20'],newdatadir='TEMP/',/DEBUG
+;	hedc_solar_automatic2,'2003/04/24 '+['12:00','14:00'],/GOESmin,newdatadir='/ftp/pub/hedc/fs/data1/hedc/data/products/NEWHEDCDATA/'
+;	hedc_solar_automatic2,'2003/07/29 '+['01:30','01:50'],/GOESmin,newdatadir='/ftp/pub/hedc/fs/data1/hedc/data/products/NEWHEDCDATA/',/DEBUG
+;
+;
+;=====================================================================================================================================================================================
+;=====================================================================================================================================================================================
+;=====================================================================================================================================================================================
+;=====================================================================================================================================================================================
+;HEDC event generation from flare list...
+
+PRO hedc_solar_automatic2, time_intv, newdatadir=newdatadir, rejected_list_file=rejected_list_file,DEBUG=DEBUG,GOESmin=GOESmin, NOREPLACE=NOREPLACE
+
+IF NOT KEYWORD_SET(newdatadir) THEN newdatadir=GETENV('HEC_OUTPUT_DIR')+'/'
+;IF NOT KEYWORD_SET(rejected_list_file) THEN rejected_list_file=GETENV('HEC_ROOT')+'/logs/rejected_flares.list'
+
+PRINT,'Interval of interest: '+anytim(time_intv[0],/ECS)+' to '+anytim(time_intv[1],/ECS)
+
+flo=hsi_flare_list()	
+flo->set,obs_time_interval=time_intv
+fl=flo->getdata()
+;flinfo=flo->get()
+OBJ_DESTROY,flo
+gev=rapp_get_gev(time_intv)
+IF datatype(gev) NE 'INT' THEN already_done_gev=BYTARR(N_ELEMENTS(gev))
+
+IF datatype(fl) NE 'STC' THEN BEGIN
+	PRINT,'.........No flares in the flare list for that time interval. Aborting now.'
+	GOTO,THEEND
+ENDIF
+
+nbrtried=0
+nbrdone=0
+FOR j=0,N_ELEMENTS(fl)-1 DO BEGIN
+	doit=1	; doit =2 is for minimal event creation.
+	
+	es=0
+	IF KEYWORD_SET(DEBUG) THEN BEGIN
+		REMOVE_FROM_HEDC=0
+	ENDIF ELSE BEGIN
+		REMOVE_FROM_HEDC=1
+		CATCH,es
+	ENDELSE
+	IF KEYWORD_SET(NOREPLACE) THEN REMOVE_FROM_HEDC=0
+	
+	IF es NE 0 THEN BEGIN
+		es=0
+		PRINT,'...............................CAUGHT ERROR !......................'
+		HELP, CALLS=caller_stack
+		PRINT, 'Error index: ', es
+		PRINT, 'Error message:', !ERR_STRING
+		PRINT,'Error caller stack:',caller_stack
+		HELP, /Last_Message, Output=theErrorMessage
+		FOR k=0,N_Elements(theErrorMessage)-1 DO PRINT, theErrorMessage[k]
+		GOTO,NEXTPLEASE					
+	ENDIF
+
+;FLARE selection:-----------------------------------------------------------------------------------------------------------------------------------------
+	;info setup:
+	flare_intv=anytim([fl[j].START_TIME,fl[j].END_TIME])
+	flare_duration=fl[j].END_TIME-fl[j].START_TIME
+
+	;Is this jimm flare simultaneous to a gev ?
+	cur_gev_ss=-1
+	IF datatype(gev) NE 'INT' THEN BEGIN
+		FOR k=0,N_ELEMENTS(gev)-1 DO BEGIN
+			IF has_overlap([fl[j].START_TIME,fl[j].END_TIME],[gev[k].START_TIME,gev[k].END_TIME]) THEN BEGIN
+				cur_gev_ss=k
+;;;;;;;;;;;;;;;;;;;;;;;;;If any of the flarelist flares are in within this gev, take the time_intv of the first flarelist item event to the last flarelist item.
+				fbeg=anytim('2020/01/01')
+				fend=anytim('2000/01/01')
+				FOR l=0,N_ELEMENTS(fl)-1 DO BEGIN
+					IF has_overlap([fl[l].START_TIME,fl[l].END_TIME],[gev[k].START_TIME,gev[k].END_TIME]) THEN BEGIN
+						fbeg=MIN([fl[l].START_TIME,fbeg])
+						fend=MAX([fl[l].END_TIME,fend])
+					ENDIF
+				ENDFOR
+				IF ((fbeg GE anytim('2019/01/01')) OR (fend LE anytim('2001/01/01'))) THEN PRINT,"BIG TROUBLES WITH DATES !!!"
+				IF gev[k].MAXFLUX GE 0.00005 THEN BEGIN
+					fbeg=MIN([anytim(gev[k].START_TIME),fbeg])
+					fend=MAX([anytim(gev[k].END_TIME),fend])
+				ENDIF
+				flare_intv=[fbeg,fend]
+				flare_duration=anytim(flare_intv[1])-anytim(flare_intv[0])
+				ptim,flare_intv
+;;;;;;;;;;;;;;;;;;;;;;;;;
+			ENDIF
+		ENDFOR
+	ENDIF	
+
+	;GOES stuff:
+	goo=OBJ_NEW('goes')
+	goo->read,anytim(flare_intv[0],/yoh),anytim(flare_intv[1],/yoh),err=err
+	IF err EQ '' THEN BEGIN
+		goesdata=goo->getdata()
+		goesmax=MAX(goesdata[*,0])
+	ENDIF ELSE goesmax=-1
+	goo->flush,1
+	OBJ_DESTROY,goo
+
+	oso=hsi_obs_summary()
+	oso->set,obs_time=anytim(fl[j].PEAK_TIME)+[0.,8.]
+	flagdata_struct=oso->getdata(class='hsi_obs_summ_flag')	
+	OBJ_DESTROY,oso	
+
+	qmro=hsi_qlook_monitor_rate(obs_time_interval=anytim(fl[j].PEAK_TIME)+[0.,8.])
+	qmr=qmro->getdata()
+	;qmrtimes=qmro->getdata(/xaxis)
+	OBJ_DESTROY,qmro
+	
+;decisions:
+	
+	;do min:
+	IF fl[j].PEAK_COUNTRATE LT 8. THEN doit=2		;//PSH 2003/02/12: changed from 20 to 8
+	IF fl[j].TOTAL_COUNTS LT 2000 THEN doit=2
+	;IF flagdata_struct[0].FLAGS[24] NE 0 THEN doit=2 ;does not work good enough anymore... will use monitor rates...
+	IF ((goesmax LT 1e-5) AND (TOTAL(qmr[0].PARTICLE_RATE) GT 25)) THEN doit=2	;25 is a pretty arbitrary number...
+
+	;don't do:
+	IF flare_duration LT 10. THEN doit=0
+	IF ( (anytim(fl[j].PEAK_TIME) LT anytim(time_intv[0])) OR (anytim(fl[j].PEAK_TIME) GT anytim(time_intv[1])) ) THEN doit=0	
+	IF KEYWORD_SET(GOESmin) THEN BEGIN
+		IF N_ELEMENTS(GOESmin) EQ 1 THEN BEGIN
+			IF GOESmin EQ 1 THEN GOESmin=1e-5 ; M1.0
+			IF goesmax LT GOESmin THEN doit=0
+		ENDIF ELSE BEGIN
+			IF ((goesmax LT GOESmin[0]) OR (goesmax GE GOESmin[1])) THEN doit=0
+		ENDELSE
+	ENDIF
+	IF cur_gev_ss NE -1 THEN BEGIN
+		IF already_done_gev[cur_gev_ss] EQ 1 THEN doit=0
+	ENDIF
+;-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+	IF doit NE 0 THEN BEGIN
+		nbrtried=nbrtried+1				
+		PRINT,'...................Doing '+anytim(/ECS,fl[j].peak_time)+' ................'
+		IF doit EQ 2 THEN PRINT,'.................... (MINIMUM) ......................'
+		hedc_solar_event,flare_intv,STD=2-doit,MINIMUM=doit-1,/ZBUFFER,newdatadir=newdatadir,backgndtime=[fl[j].BCK_TIME[0],fl[j].BCK_TIME[1]-30],REMOVE_FROM_HEDC=REMOVE_FROM_HEDC,DEBUG=DEBUG, flarelistid=fl[j].ID_NUMBER
+		nbrdone=nbrdone+1
+		IF cur_gev_ss NE -1 THEN already_done_gev[cur_gev_ss]=1
+	ENDIF ELSE BEGIN
+		IF KEYWORD_SET(rejected_list_file) THEN BEGIN
+			OPENW,lun,rejected_list_file,/GET_LUN,/APPEND
+			PRINTF,lun,'Rejected flarelist entry: '+anytim(fl[j].PEAK_TIME,/ECS)
+			FREE_LUN,lun		
+		ENDIF
+	ENDELSE
+
+	NEXTPLEASE:
+	CATCH,/CANCEL
+	HEAP_GC
+ENDFOR;j
+
+PRINT,'............There were '+strn(N_ELEMENTS(fl))+' flares in the flarelist.'
+PRINT,'............Only '+strn(nbrtried)+' were attempted.'
+PRINT,'............'+strn(nbrdone)+' were completed.'
+
+THEEND:
+PRINT,'IDL-OK'
+
+IDLversion=FLOAT(STRMID(!version.release,0,3))
+IF IDLversion EQ 5.4 THEN FLUSH,-1
+END
+;=====================================================================================================================================================================================

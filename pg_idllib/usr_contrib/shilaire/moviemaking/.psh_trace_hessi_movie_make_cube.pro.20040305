@@ -1,0 +1,120 @@
+; Each TRACE image will be assigned the HESSI images closest in time...
+;
+;
+;
+; /SPARE_RAM: will use a smaller amount of RAM to make the cube (TRACE images are only stored 1 by 1), but will be slower.
+;
+;
+; RETURNS cube.
+;
+; PLANNED IMPROVEMENTS:
+;	Add GOES lightcurves, Phoenix-2 spg,...
+;
+; IF the time difference between a TRACE image and its nearest HESSI image is more than 'max_time_diff' (def: 60. secs), the HESSI image is forgotten.
+;
+
+
+
+FUNCTION psh_trace_hessi_movie_make_cube, tracefiles, hessifile, FOV=FOV, SPARE_RAM=SPARE_RAM, max_time_diff=max_time_diff,min_nbr_counts=min_nbr_counts, ebands_ss=ebands_ss
+			
+	IF NOT KEYWORD_SET(max_time_diff) THEN 	max_time_diff=59.
+	IF NOT KEYWORD_SET(SPARE_RAM) THEN tracemapptr=psh_fits2map(tracefiles)
+	n_imgs=N_ELEMENTS(tracefiles)
+	hessimapptr=psh_fits2map(hessifile, ext1=ctrlinfo)	
+	hessi_tintvs=ctrlinfo.times_arr
+	hessitimes=avg(hessi_tintvs,0)
+	ebands=ctrlinfo.ebands_arr
+	n_ebands=N_ELEMENTS(ebands[0,*])	
+	IF NOT KEYWORD_SET(ebands_ss) THEN ebands_ss=INDGEN(ctrlinfo.ebands_arr[0,*])
+	n_ebands_ss=N_ELEMENTS(ebands_ss)
+	IF NOT KEYWORD_SET(FOV) THEN FOV=[[ctrlinfo.xyoffset[0]+[-100,100]],[ctrlinfo.xyoffset[1]+[-100,100]]]
+
+	xrange=FOV[*,0]
+	yrange=FOV[*,1]
+	loadct,1
+	rainbow_linecolors
+	basesize=300
+	charsize=0.7
+
+;get Obs. Summ. countrates (corrected).
+	oso=hsi_obs_summary()
+	IF KEYWORD_SET(SPARE_RAM) THEN BEGIN 
+		tracemap=fits2map(tracefiles[0])
+		tmp=fits2map(tracefiles[n_imgs-1])		
+		obs_time_intv=[anytim(tracemap.time),anytim(tmp.time)]+[-120,120]
+	ENDIF ELSE obs_time_intv=anytim([(*tracemapptr[0]).time,(*tracemapptr[n_imgs-1]).time])+[-120,120]
+	oso->set,obs_time_interval=obs_time_intv
+	osrates=(oso->getdata()).COUNTRATE
+	ostimes=oso->getdata(/xaxis)
+	OBJ_DESTROY,oso
+
+;get TRACE ROI lightcurve...
+	FOR i=0L,n_imgs-1 DO BEGIN
+		IF KEYWORD_SET(SPARE_RAM) THEN BEGIN
+			tracemap=fits2map(tracefiles[i])
+			sub_map,tracemap,smap,xrange=xrange,yrange=yrange
+		ENDIF ELSE tracemap=*tracemapptr[i]
+		sub_map,tracemap,smap,xrange=xrange,yrange=yrange
+		IF i EQ 0 THEN tracetimes=anytim(tracemap.time) ELSE tracetimes=[tracetimes,anytim(tracemap.time)]
+		IF datatype(smap) EQ 'UND' THEN addtracelc=0d ELSE addtracelc=TOTAL(SMOOTH(smap.DATA,5))	
+		IF i EQ 0 THEN tracelc=addtracelc ELSE tracelc=[tracelc,addtracelc]
+	ENDFOR
+
+;main business...
+	psh_win,2*basesize,basesize
+	cube=BYTARR(2*basesize,basesize,n_imgs)
+	ctrl=mrdfits(hessifile,1)
+
+	FOR i=0,n_imgs-1 DO BEGIN
+	;plot TRACE image...
+		!P.MULTI=[0,2,1]
+		IF KEYWORD_SET(SPARE_RAM) THEN tracemap=fits2map(tracefiles[i]) ELSE tracemap=*tracemapptr[i]
+		plot_map,tracemap,bottom=8,/LOG,xrange=xrange,yrange=yrange,xtitle='',ytitle='',grid=10,/LIMB,xmar=[5,0],ymar=[2,2],/ISO,charsize=charsize,status=status
+		IF status EQ 0 THEN PLOT,DINDGEN(10),color=0
+		;decide which HESSI image will be put with this TRACE image...
+			ss=SORT(abs(hessitimes-tracetimes[i]))
+			ss=ss[0]
+			IF abs(hessitimes[ss]-tracetimes[i]) GT max_time_diff THEN ss=-1
+		IF ss NE -1 THEN BEGIN
+			FOR j=0,n_ebands_ss-1 DO BEGIN
+				info=mrdfits(hessifile,ss*n_ebands+ebands_ss[j]+1,status=fstatus)
+				IF fstatus GE 0 THEN nbr_counts=rhessi_img_counts(info,ctrl) ELSE nbr_counts=999999999L
+				IF KEYWORD_SET(min_nbr_counts) THEN IF nbr_counts LT min_nbr_counts THEN BREAK				
+				plot_map,*hessimapptr[ebands_ss[j],ss],/OVER,lcolor=j+1+(j GE 4),/percent,level=[50,101]	;level=[20,50,80,101]
+				label_plot,0.03,-j-1,strn(FIX(ebands[0,ebands_ss[j]]))+'-'+strn(FIX(ebands[1,ebands_ss[j]]))+' keV',color=j+1+(j GE 4)
+				label_plot,0.03,n_ebands_ss-j,strn(LONG(nbr_counts)),color=j+1+(j GE 4)
+			ENDFOR;j
+		ENDIF
+
+	;plotting add. lightcurves/spg...
+		!P.MULTI=[2,2,2,0,1]
+
+		utplot,ostimes,TOTAL(osrates[0:1,*],1),color=1,ytit='Cts/s/det',/YLOG,yr=[1,10000],xtit='',xstyle=1,xmar=[8,1],ymar=[2,1],charsize=charsize
+		outplot,ostimes,osrates[2,*],color=2
+		outplot,ostimes,TOTAL(osrates[3:4,*],1),color=3
+		outplot,ostimes,TOTAL(osrates[5:*,*],1),color=5
+		
+		plot_label,/NOLINE,/DEV,[0.03,-1],'3-12 keV',color=1,charsize=charsize
+		plot_label,/NOLINE,/DEV,[0.03,-2],'12-25 keV',color=2,charsize=charsize
+		plot_label,/NOLINE,/DEV,[0.03,-3],'25-100 keV',color=3,charsize=charsize
+		plot_label,/NOLINE,/DEV,[0.03,-4],'0.1-17 MeV',color=5,charsize=charsize
+		
+		;adding HESSI accum. times boundaries...
+		IF ss NE -1 THEN BEGIN
+			PLOTS,/DATA,[1,1]*hessi_tintvs[0,ss],[1,10000],linestyle=2
+			PLOTS,/DATA,[1,1]*hessi_tintvs[1,ss],[1,10000],linestyle=2
+		ENDIF
+	
+		;adding TRACE lc & boundaries...
+		clear_utplot
+		utplot,tracetimes,tracelc,timerange=[ostimes[0],ostimes[N_ELEMENTS(ostimes)-1]],color=4,ytit='TRACE DN',/YLOG,xtit='',xstyle=1,xmar=[8,1],ymar=[2,1],charsize=charsize	;,yr=[1,10000]
+		IF !Y.TYPE EQ 0 THEN traceminmax=!Y.CRANGE ELSE traceminmax=10^!Y.CRANGE
+		PLOTS,/DATA,[1,1]*anytim((*tracemapptr[i]).time)-0.5*(*tracemapptr[i]).dur,traceminmax,linestyle=2
+		PLOTS,/DATA,[1,1]*anytim((*tracemapptr[i]).time)+0.5*(*tracemapptr[i]).dur,traceminmax,linestyle=2		
+	
+		cube[*,*,i]=TVRD()	
+		PRINT,'Completed: '+strn(100.*(i+1.)/n_imgs,format='(f10.1)')+' %'
+	ENDFOR;i
+RETURN,cube
+END
+

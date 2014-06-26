@@ -1,0 +1,156 @@
+; PURPOSE:
+;	Finds automatically STRONG sources and makes imaging spectroscopy of them.
+;	Assumes that there are actually sources! Also, only takes into account sources within 0.5 of map's maximum.
+;	Actually, jchooser should never be <0...
+;
+; INPUTS:
+;	sourceimg OR ichooser,jchooser
+;		sourceimg; image (2-d array) or imagecube (in time) with as many time intv as in the fitsfile.
+;		ichooser: index (in time) of image to take for source finding. If <0, will pick the current time intv.
+;		jchooser: index (in energy) of image to take for source finding
+;
+;
+; KEYWORDS:
+;	fitsfile: RHESSI imagecube fitfile
+;	pngfile: filename to which to output the PNG image.
+;	fitEband: eband (ex: [15,100]) within which to fit the power-law.
+;		
+; EXAMPLE:
+;	hedc_imspec, -1, 3
+;	hedc_imspec, 2, 3
+;
+;	set_plot,'Z' & hedc_imspec, 2, 3,pngfile='test.png' & x
+;
+;----------------------------------------------------------------------------------------------------------------------------------------
+FUNCTION hedc_imspec_extract_sources, img,src, VERBOSE=VERBOSE
+
+	n_sources_max=6
+
+	imgdim=N_ELEMENTS(img[*,0])	
+	src=REPLICATE({gra:-1d,grb:-1d,tet:0d,max:-1d,xmax:0d,ymax:0d},n_sources_max)
+	extract_sources,img,src, NBMAX=n_sources_max,fmax=0.5
+	ss=WHERE(src.gra GE 0)
+	IF ss[0] NE -1 THEN src=src[ss]	
+	src.gra=1/sqrt(src.gra)
+	src.grb=1/sqrt(src.grb)
+	IF KEYWORD_SET(VERBOSE) THEN printai,src
+	RETURN,src
+END
+;----------------------------------------------------------------------------------------------------------------------------------------
+PRO hedc_imspec, in1,in2, fitsfile=fitsfile, pngfile=pngfile, fitEband=fitEband, STATS=STATS
+	IF N_PARAMS() GE 2 THEN BEGIN
+		sourceimg=-1
+		ichooser=in1
+		jchooser=in2		
+	ENDIF ELSE BEGIN
+		sourceimg=in1
+		ichooser=-1
+		jchooser=-1
+	ENDELSE
+	IF NOT KEYWORD_SET(fitsfile) THEN fitsfile='hsi_imagetesseract_HXS202201106.fits'
+	IF NOT KEYWORD_SET(fitEband) THEN fitEband=[15,100]	; for power-law
+	
+	imgtess=mrdfits(fitsfile,0)
+	xdim=N_ELEMENTS(imgtess[*,0,0,0])
+	ydim=N_ELEMENTS(imgtess[0,*,0,0])
+	n_ebands=N_ELEMENTS(imgtess[0,0,*,0])
+	n_tintvs=N_ELEMENTS(imgtess[0,0,0,*])
+	
+	tmp=mrdfits(fitsfile,1)
+	tintvs=tmp.times_arr
+	ebands=tmp.ebands_arr
+	edge_products,ebands,mean=ebins
+	
+	basesize=300
+	psh_win,basesize*n_tintvs,2*basesize
+	hessi_ct
+	n_src_max=2
+	
+	;if both {i,j}chooser are >=0, means I only determine sources once...
+	CASE N_ELEMENTS(sourceimg) OF
+		1:BEGIN
+			IF ((ichooser GE 0) AND (jchooser GE 0)) THEN BEGIN
+				src=hedc_imspec_extract_sources(imgtess[*,*,jchooser,ichooser])
+				n_src=N_ELEMENTS(src) < n_src_max
+			ENDIF
+		END
+		2:BEGIN
+			src=hedc_imspec_extract_sources(sourceimg)
+			n_src=N_ELEMENTS(src) < n_src_max				
+		END
+		ELSE: PRINT,' '
+	ENDCASE
+
+	FOR i=0L,n_tintvs-1 DO BEGIN
+		!P.MULTI=[2*(n_tintvs-i),n_tintvs,2,0,1]
+		;plot the energy-summed picture.		
+		CASE N_ELEMENTS(sourceimg) OF
+			1: plot_image,imgtess[*,*,jchooser,i],/VEL,xmar=[1,1],ymar=[1,1],xtickname=REPLICATE(' ',10),ytickname=REPLICATE(' ',10)
+			2: plot_image,sourceimg,/VEL,xmar=[1,1],ymar=[1,1],xtickname=REPLICATE(' ',10),ytickname=REPLICATE(' ',10)				
+			ELSE: plot_image,sourceimg[*,*,i],/VEL,xmar=[1,1],ymar=[1,1],xtickname=REPLICATE(' ',10),ytickname=REPLICATE(' ',10)				
+		ENDCASE
+		plot_label,/DEV,/NOLINE,[0.05,1],anytim(tintvs[0,i],/ECS,/time)+'-'+anytim(tintvs[1,i],/ECS,/time)
+
+		IF ((N_ELEMENTS(sourceimg) EQ 1) AND (ichooser LT 0)) THEN BEGIN
+			src=hedc_imspec_extract_sources(imgtess[*,*,jchooser,i])
+			n_src=N_ELEMENTS(src) < n_src_max
+		ENDIF ELSE BEGIN
+			IF N_ELEMENTS(sourceimg) EQ 3 THEN BEGIN
+				src=hedc_imspec_extract_sources(sourceimg[*,*,i])
+				n_src=N_ELEMENTS(src) < n_src_max
+			ENDIF
+		ENDELSE
+
+		sp=DBLARR(n_ebands,n_src)
+
+		FOR k=0L,n_src-1 DO BEGIN
+			mytvellipse,src[k].gra,src[k].grb,src[k].xmax,src[k].ymax,src[k].tet*180./!PI,/data
+			XYOUTS,/DATA,src[k].xmax+5,src[k].ymax-5,strn(k+1)
+			IF KEYWORD_SET(STATS) THEN BEGIN
+				plot_label,/NOLINE,/DEV,[0.03,-k-2],strn(k+1)+': pos=['+strn(src[k].xmax,format='(f10.1)')+','+strn(src[k].ymax,format='(f10.1)')+']  size=['+strn(src[k].gra,format='(f10.1)')+','+strn(src[k].grb,format='(f10.1)')+']'
+			ENDIF
+		ENDFOR
+		FOR k=0L,n_src-1 DO BEGIN
+			;sum every pixel inside the range, for every eband.
+			FOR j=0,n_ebands-1 DO BEGIN
+				sum=0d
+				npix=0L
+				FOR ix=0,xdim-1 DO BEGIN
+					FOR iy=0,ydim-1 DO BEGIN
+							;the following does not yet take into account the angle of the ellipse...
+							;IF ( ((ix-src[k].xmax)/src[k].gra)^2 +((iy-src[k].ymax)/src[k].grb)^2 ) LE 1d THEN BEGIN
+						IF (((ix-src[k].xmax)*cos(src[k].tet)+(iy-src[k].ymax)*sin(src[k].tet))/src[k].gra)^2 +((-(ix-src[k].xmax)*sin(src[k].tet)+(iy-src[k].ymax)*cos(src[k].tet))/src[k].grb)^2 LE 1d THEN BEGIN
+							sum=sum+imgtess[ix,iy,j,i]
+							npix=npix+1
+						ENDIF
+					ENDFOR
+				ENDFOR				
+				sp[j,k]=sp[j,k]+sum/(ebands[1,j]-ebands[0,j])/npix			;converts to ph/s/cm^2/asec^2/keV, and averages over source (hence, we get AVERAGED source INTENSITY)
+			ENDFOR		
+		!P.MULTI=[4*(n_tintvs-i)-2-k,n_tintvs,4,0,1]
+		PLOT,ebins,sp[*,k],/XLOG,/YLOG,xmar=[10,3],ymar=[1,1],yr=[1e-6,1e4],psym=7
+		;fitting a power-law... and displaying the results...
+			;choosing bins where we actually have an above zero number and inside the eband interval......
+			ss=WHERE((sp[*,k] GT 0) AND (ebins GE fitEband[0]) AND (ebins LE fitEband[1]))
+			IF N_ELEMENTS(ss) GT 2 THEN coeff=robust_linefit(ALOG10(ebins[ss]),ALOG10(sp[ss,k]),yfit,sig,coeff_sig)	ELSE coeff=-1
+			IF N_ELEMENTS(coeff) GE 2 THEN BEGIN
+				OPLOT,ebins[ss],10^yfit,color=0.7*!D.TABLE_SIZE,thick=2.0
+				plot_label,/DEV,/NOLINE,[0.05,-1],'!7c!3='+strn(-coeff[1],format='(f10.1)')+' I!D50!N='+strn(10^(coeff[0]+coeff[1]*ALOG10(50))),color=0.7*!D.TABLE_SIZE
+			ENDIF
+		ENDFOR		
+	ENDFOR
+;now, add a small margin to the left, with some more info...
+	xmarginsize=30
+	img=TVRD()
+	psh_win,xmarginsize+basesize*n_tintvs,2*basesize	
+	TV,img,xmarginsize,0
+	IF N_ELEMENTS(sourceimg) NE 1 THEN XYOUTS,15,1.35*basesize,/DEVICE,strn(ebands[0,jchooser],format='(f10.1)')+'-'+strn(ebands[1,jchooser],format='(f10.1)')+' keV',ORIENTATION=90
+	XYOUTS,15,0.2*basesize,/DEVICE,"Average source `intensity' !C[ph s!U-1!N cm!U-2!N asec!U-2!N keV!U-1!N]",ORIENTATION=90
+	
+	IF KEYWORD_SET(pngfile) THEN BEGIN
+		TVLCT,r,g,b,/GET
+		WRITE_PNG,pngfile,TVRD(),r,g,b
+	ENDIF
+END
+;----------------------------------------------------------------------------------------------------------------------------------------
+

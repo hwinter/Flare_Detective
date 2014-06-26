@@ -1,0 +1,63 @@
+;+
+; NAME:
+;
+; pg_nano_applyoperation
+;
+; PURPOSE:
+;
+; returns some data from an event that is saved on disk. Neede to work around
+; memory limitations in 32 bit IDL on Macs.
+;
+; CATEGORY:
+;
+; nanoflares utility
+;
+; CALLING SEQUENCE:
+;
+;
+;
+; INPUTS:
+;
+;
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; MODIFICATION HISTORY:
+;
+;-
+
+

@@ -1,0 +1,66 @@
+;+
+; NAME:
+;
+; pg_sortintervals
+;
+; PURPOSE:
+;
+; hard to explain... let's try: let the inputs be two set of number,
+; the "in" numbers and the "out" numbers. Ideally, they would describe
+; a set of interval between each pair of "in" and "out" numbers.
+; That means that the intervals would be described by in[0]:out[0],
+; in[1]:out[1], etc. etc. Now the purpose of this routine is to fix
+; input arrays in and out that have some mismatch in them, for instance
+; in[2] lies between in[1] and out[1]. In such a case, in[2] will be deleted.
+;
+; CATEGORY:
+;
+;
+;
+; CALLING SEQUENCE:
+;
+;
+;
+; INPUTS:
+;
+;
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; MODIFICATION HISTORY:
+;
+;-

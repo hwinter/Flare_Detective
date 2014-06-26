@@ -1,0 +1,107 @@
+;+
+; NAME:
+;
+;   pg_update_events
+;
+; PURPOSE:
+;
+;   update the events from the list (i.e., generates new data products for
+;   events not already in the list)
+;
+; CATEGORY:
+;
+;   RHESSI util
+;
+; CALLING SEQUENCE:
+;
+;   pg_update_events
+;
+; INPUTS:
+;
+;
+;
+; OPTIONAL INPUTS:
+;
+;  
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+;  as files on the disk
+;    
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+; 
+; AUTHOR:
+; 
+;   Paolo Grigis ( pgrigis@astro.phys.ethz.ch )
+;
+; MODIFICATION HISTORY:
+;
+;   15-JAN-2007 written PG
+;
+;-
+
+;.comp  pg_update_events
+
+PRO pg_update_events,flareinfo,listfilebasename,basdir=basdir
+
+  basdir=fcheck(basdir,'~/hsiflaresforhinode/')
+  ps=path_sep()
+
+  datadir=basdir+'data'+ps
+  
+  IF NOT exist(listfilebasename) THEN listfilebasename='flarelist_done'
+
+  txtfile=datadir+listfilebasename+'.txt'
+  fitsfile=datadir+listfilebasename+'.fits'
+
+  IF file_exist(txtfile) THEN BEGIN 
+     print,'txtfile exist'
+  ENDIF
+
+  openw,lun,txtfile,/get_lun,/append
+
+  todoflares=findgen(n_elements(flareinfo))
+
+  FOR i=0,n_elements(todoflares)-1 DO BEGIN 
+
+     pg_dataforoneevent,flareinfo[todoflares[i]],datadir,outdir=outdir
+     
+     ;print,'test '+string(i)
+     printf,lun,strtrim(string(flareinfo[todoflares[i]].id_number),2)+'  '+outdir $
+           +'  '+togoes(flareinfo[todoflares[i]].goes_class)
+     
+  ENDFOR
+
+  close,lun
+  free_lun,lun
+
+  
+
+END

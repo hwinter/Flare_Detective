@@ -1,0 +1,259 @@
+;+
+;NAME:
+; obs_summ_page.pro
+;PROJECT:
+;
+; HESSI at ETHZ
+;
+;CATEGORY:
+; 
+;PURPOSE:
+;
+;PLANNED IMPROVEMENT:
+;
+;CALLING SEQUENCE:
+; obs_summ_page,time_interval
+;
+;INPUT:
+; time_interval = a 2-element array,in a format accepted by ANYTIM
+;
+;OPTIONAL INPUT:	
+;
+;OUTPUT:
+; Observing Summary Information for that time range
+;
+;KEYWORDS:
+;
+;EXAMPLE:
+;
+;HISTORY:
+;	Written in a hurry on 2002/04/14 by PSH
+;
+;	Modified: 2002/04/16 : added aspect solution
+;	Modified: 2002/04/30 : modified to be graphics device-independant, removed keyword JPG
+;-
+
+
+PRO obs_summ_page,time_intv,filename=filename
+
+ngraphs=4
+xsize=800;900
+ysize=900
+charsiz=2.0
+
+
+IF !D.NAME EQ 'Z' THEN BEGIN
+	DEVICE,/CLOSE
+	DEVICE, set_resolution=[xsize,ysize]
+ENDIF ELSE BEGIN
+	IF !D.WINDOW NE -1 THEN WINDOW,!D.WINDOW,xs=xsize,ys=ysize ELSE WINDOW,0,xs=xsize,ys=ysize
+ENDELSE
+
+Error_Status=0
+;CATCH, Error_Status
+	IF Error_Status NE 0 THEN BEGIN
+		PRINT,'...............................CAUGHT ERROR !......................'
+		HELP, CALLS=caller_stack
+                PRINT, 'Error index: ', Error_status
+                PRINT, 'Error message:', !ERR_STRING
+                PRINT,'Error caller stack:',caller_stack
+		;!error_state.code=Error_Status
+                PRINT,'...................... scratch Obs. Summary page...........'		
+		GOTO,THEEND
+	ENDIF
+
+!P.multi=[0,1,ngraphs]
+
+myct3,ct=1
+TVLCT,r,g,b,/GET
+
+oso=obj_new('hsi_obs_summary')
+oso->set,obs_time_interval=time_intv
+
+;====================================================================================
+;count rates
+;====================================================================================
+	rates=oso->getdata()
+	times=oso->getdata(/time)
+	
+	lc1=TOTAL(rates(0:1,*),1)
+		maxcts=max(lc1)
+	lc2=rates(2,*)
+		maxcts=maxcts > max(lc2)
+	lc3=TOTAL(rates(3:4,*),1)
+		maxcts=maxcts > max(lc3)
+	lc4=TOTAL(rates(5:*,*),1)		;lc4=rates(5,*)
+		maxcts=maxcts > max(lc4)
+									;lc5=TOTAL(rates(6:*,*),1)
+									;maxcts=maxcts > max(lc5)
+		
+		
+	title='HESSI Observing Summary, starting on '+anytim(time_intv(0),/ECS,/trunc)+' UT'
+	utplot,times-times(0),lc1,times(0), xtitle='', $
+		ytitle='counts/s/detector',color=249,yrange=[1,maxcts], xstyle=1,$
+		title=title,charsize=charsiz,xmargin=[10,2],ymargin=[1,2],/ylog
+	logsep=0.4
+	XYOUTS,/DATA,times(0.03*N_ELEMENTS(times))-times(0),maxcts*0.5,'3-12 keV',color=249
+	outplot,times-times(0),lc2, color=250
+	XYOUTS,/DATA,times(0.03*N_ELEMENTS(times))-times(0),maxcts*0.5*logsep,'12-25 keV',color=250
+	outplot,times-times(0),lc3, color=251
+	XYOUTS,/DATA,times(0.03*N_ELEMENTS(times))-times(0),maxcts*0.5*logsep^2,'25-100 keV',color=251
+	outplot,times-times(0),lc4, color=252
+	XYOUTS,/DATA,times(0.03*N_ELEMENTS(times))-times(0),maxcts*0.5*logsep^3,'0.1-17 MeV',color=252	;XYOUTS,/DATA,times(0.03*N_ELEMENTS(times))-times(0),maxcts*0.9*logsep^3,'100-300 keV',color=252
+												;outplot,times-times(0),lc5, color=254
+												;XYOUTS,/DATA,times(0.03*N_ELEMENTS(times))-times(0),maxcts*0.5*logsep^4,'0.3-17 MeV',color=254
+
+
+;====================================================================================
+;mod variance
+;====================================================================================
+	oso->plot,class_name='mod_variance',charsize=charsiz,xmargin=[10,2],ymargin=[1,1],xtitle='', xstyle=1,title=''
+
+
+;====================================================================================
+;particle rate
+;====================================================================================
+	;oso->plot,class_name='hsi_particle_rate',charsiz=charsiz,xmargin=[10,2],ymargin=[1,1],xtitle='', xstyle=1,title=''
+
+
+;====================================================================================
+;Qlook pointing, roll_angle, roll_period
+;====================================================================================
+
+
+;====================================================================================
+;Flags
+;====================================================================================
+	flagdata=oso->getdata(class_name='obs_summ_flag')
+	flaginfo=oso->get(class_name='obs_summ_flag')
+	flagtimes=oso->getdata(class_name='obs_summ_flag',/time)
+
+	; 'bit-like' flags:
+	wantedflags=[0,1,2,11,12,16,17,14]
+	i=0
+
+	utplot,flagtimes-flagtimes(0),flagdata(wantedflags(i),*),flagtimes(0),charsiz=charsiz,xmargin=[10,2],ymargin=[1,1],xtitle='', xstyle=1,$
+		yrange=[-2,18],ytickname=[' ',' ',' ',' ',' ',' ',' ',' '],ytitle='Flags',yticklen=0.00001,ystyle=1,/NODATA
+
+	;XYOUTS,/DATA,times(0.01*N_ELEMENTS(flagtimes))-flagtimes(0),2*i-1,flaginfo.flag_ids(wantedflags(i)),color=250
+	FOR i=0,N_ELEMENTS(wantedflags)-1 DO BEGIN
+		fdata=flagdata(wantedflags(i),*)
+		
+		CASE wantedflags(i) OF
+			0: color=250	;SAA
+			1: color=253	;NIGHT
+			2: color=251	;FLARE
+			11: BEGIN 
+				color=250	;TRANSMITTER
+				fdata=FLOAT(fdata)/100.
+			END
+			12: BEGIN
+				color=251	;SUNLIGHT
+				fdata=FLOAT(fdata)/100.
+			END			
+			14: color=254	;ATTENUATOR
+			16: color=200	;NONSOLAR
+			17: color=249	;GAP
+			19: color=200	;DECIMATION_WEIGHT			
+			ELSE:color=200
+		ENDCASE
+		outplot,flagtimes-flagtimes(0),2*i+fdata-1,flagtimes(0), color=color
+		XYOUTS,/DATA,times(0.01*N_ELEMENTS(flagtimes))-flagtimes(0),2*i-1,flaginfo.flag_ids(wantedflags(i)),color=color
+	ENDFOR
+		
+
+!P.MULTI=[2,1,8]
+
+	; decimation flags:
+	wantedflags=[18,19]
+
+	yrange=[1,1000]
+	utplot,flagtimes-flagtimes(0),flagdata(wantedflags(0),*),flagtimes(0),charsiz=charsiz,xmargin=[10,2],ymargin=[1,1],xtitle='', xstyle=1, color=250,$
+		yrange=yrange,ytitle='DECIMATION',ystyle=1,/YLOG,/NODATA
+	FOR i=0,N_ELEMENTS(wantedflags)-1 DO BEGIN
+		fdata=flagdata(wantedflags(i),*)
+		ligne=flaginfo.flag_ids(wantedflags(i))
+
+		CASE wantedflags(i) OF			
+			18: color=252	;DECIMATION_ENERGY
+			19: color=250	; DECIMATION_WEIGHT
+			ELSE:color=200
+		ENDCASE
+		outplot,flagtimes-flagtimes(0),fdata,flagtimes(0), color=color
+		XYOUTS,/DATA,times(0.025*N_ELEMENTS(flagtimes))-flagtimes(0),yrange(1)/(3^(i+1)),ligne,color=color
+	ENDFOR
+
+
+
+
+	; other:
+	wantedflags=[15]
+	yrange=[0,100]
+	utplot,flagtimes-flagtimes(0),flagdata(wantedflags(0),*),flagtimes(0),charsiz=charsiz,xmargin=[10,2],ymargin=[1,1],xtitle='', xstyle=1, color=251,$
+		yrange=yrange,ytitle='GEOMAGNETIC latitude',ystyle=1
+	XYOUTS,/DATA,times(0.025*N_ELEMENTS(flagtimes))-flagtimes(0),9*yrange(1)/10,flaginfo.flag_ids(wantedflags(0)),color=251
+	FOR i=1,N_ELEMENTS(wantedflags)-1 DO BEGIN
+		fdata=flagdata(wantedflags(i),*)
+		ligne=flaginfo.flag_ids(wantedflags(i))
+
+		CASE wantedflags(i) OF			
+			18: color=252	;DECIMATION_ENERGY
+			19: BEGIN
+				color=250	; DECIMATION_WEIGHT
+				fdata=10*FLOAT(fdata)
+			END
+			ELSE:color=200
+		ENDCASE
+		outplot,flagtimes-flagtimes(0),fdata,flagtimes(0), color=color
+		XYOUTS,/DATA,times(0.025*N_ELEMENTS(flagtimes))-flagtimes(0),yrange(1)-(i+1)*yrange(1)/10,ligne,color=color
+	ENDFOR
+
+	ephdata=oso->getdata(class_name='ephemeris')	
+	ephtimes=oso->getdata(class_name='ephemeris',/time)
+	tmp=eci2geographic(ephdata(0:2,*),ephtimes)
+	tmp=geo2mag(tmp(0:1,*))
+	outplot,ephtimes-ephtimes(0),abs(tmp(0,*)), color=225
+	XYOUTS,/DATA,times(0.1*N_ELEMENTS(ephtimes))-ephtimes(0),yrange(1)-(N_ELEMENTS(wantedflags)+1)*yrange(1)/10,'Absolute geomagnetic latitude',color=225
+	
+
+;====================================================================================
+;SAS solution (at the end, because still buggy)
+;====================================================================================
+
+;err_status=0
+;CATCH,err_status
+;	IF err_status NE 0 THEN GOTO,AFTERSAS
+;	
+;	ao=hsi_aspect_solution() 
+;	ao->set,aspect_cntl_level=0 	
+;	ao->set,obs_time_interval=anytim(time_intv)
+;	;ao->set,aspect_time_range=anytim(time_intv)	
+;	as=ao->getdata()
+;	qual=ao->get(/as_quality)
+;	
+;	times=as.time * 2d^(-7)
+;	t0=hsi_sctime2any(as.t0)
+;	quality=qual.triangle
+;	utplot,times,abs(quality),t0,xstyle=1,charsize=charsiz,xmargin=[10,2],ymargin=[2,2],timerange=anytim(time_intv), $
+;		 /ylog, yrange=[0.01,100], xtitle='', ytitle='[arcsec]', title='SAS :  Size of Reduced Triangle'
+;	
+;AFTERSAS:
+;	obj_destroy,oa
+;CATCH,/CANCEL
+
+;====================================================================================
+;====================================================================================
+
+THEEND:
+
+IF KEYWORD_SET(filename) THEN BEGIN
+	TVLCT,r,g,b,/GET
+	write_png,filename,TVRD(),r,g,b
+ENDIF
+
+IF !D.NAME EQ 'Z' THEN DEVICE,/CLOSE
+!P.MULTI=0
+OBJ_DESTROY,oso
+END
+
+

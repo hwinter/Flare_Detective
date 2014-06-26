@@ -1,0 +1,187 @@
+;+
+;NAME:
+; hsi_display_obs_summ.pro
+;PROJECT:
+; HESSI
+;CATEGORY:
+; 
+;PURPOSE:
+; To view in several separate windows some Observing Summary parameters,
+; given a time interval.
+;
+;PLANNED IMPROVEMENT:
+; To add the proper HEDC EVENT flags (GRB, Solar Flare, etc...)
+; To add a satellite view at beginning of timerange (keyword...?)
+; To add all the data in the info structure of fits ?
+;
+;CALLING SEQUENCE:
+; hsi_display_obs_summ,time_interval,counts=1
+;
+;INPUT:
+; time_interval = a 2-element array,in a format accepted by ANYTIM
+;
+;OPTIONAL INPUT:
+; 
+; counts   : hsi_display_obs_summ.pro draws the countrates, for:
+;		counts=1 : standard obs_summary energy nbands
+;		counts=2 : SXR/HXR/GR energy bands
+;		counts=3 : HEDC standard energy bands
+;
+; /mod_var
+;
+; /part_rates
+;
+; /subpoint : hessi subpoint
+;			trajectory for that time interval
+; /satellite : if set, hsi_display_obs_summ.pro draws a satellite view
+;			of HESSI at timerange(0)
+;
+; filename : will output result in this path 
+;	!!!: here, it is pointless to have more than one display, as they'll
+;		all be saved under the same filename...
+;
+;OUTPUT:
+; Observing Summary Information for that time range, according to keywords
+;	specified 
+;
+;KEYWORDS:
+;	see above
+;EXAMPLE:
+; hsi_display_obs_summ,'31-aug-00 '+['16:00:00','17:00:00'],counts=1
+;
+;
+;HISTORY:
+; created by Pascal Saint-Hilaire (shilaire@astro.phys.ethz.ch) on March 19th,2001
+; modified to accept level 0 data fits files as input
+; 27-APR-2001 : level 0 data fits files as input is no longer supported.
+;		changed the way the whole thing works
+;
+; modified 2001/08/22 : checks if there's particle rates... (i.e. added lines 163,164 & 170)
+;
+;-
+
+PRO hsi_display_obs_summ,time_interval,		$
+			counts=counts,		$
+			mod_var=mod_var,	$
+			part_rates=part_rates,	$
+			subpoint=subpoint, 	$
+			satellite=satellite,	$
+			filename=filename,	$
+			jpg=jpg
+
+my_hessi_ct,colors
+tvlct,r,g,b,/GET
+
+oso=obj_new('hsi_obs_summary')
+oso->set,obs_time_interval=time_interval
+times = oso->getdata(/time)
+ntimes=n_elements(times)
+uttimes=anytim(times,/ints)
+
+IF KEYWORD_SET(counts) THEN BEGIN
+	; get the spin-averaged countrates in each energy range
+	rates=oso->getdata(class_name='obs_summ_rate')
+	; those rates are already decompressed
+
+	; now, put the count rates into new energy ranges (if needed)
+	CASE counts OF
+		1: newrates=rates
+		
+		2: BEGIN
+		   newrates=lonarr(3,ntimes)
+		   newrates(0,*)=rates(0,*)+rates(1,*)							; soft X-rays
+		   newrates(1,*)=rates(2,*)+rates(3,*)+rates(4,*)				; hard X-rays
+		   newrates(2,*)=rates(5,*)+rates(6,*)+rates(7,*)+rates(8,*)	; gamma rays
+		   END
+		   
+		3: BEGIN
+		   ; I should maybe shift them vertically...
+		   newrates=lonarr(3,ntimes)
+		   newrates(0,*)=rates(0,*)+rates(1,*)				
+		   newrates(1,*)=rates(3,*)+rates(4,*)+rates(5,*)
+		   newrates(2,*)=rates(6,*)+rates(7,*)+rates(8,*)	
+		   END
+	ENDCASE	
+	
+	;choose the energy band with the highest peak counts/sec to set the 
+	;y-plot range
+	ctsmax=max(newrates)
+	find_arrmax,newrates,loc
+
+	;plot the damn thing !
+	chrsiz=1.0
+	wdef,1
+	utplot,uttimes,newrates(loc(0),*),xtitle='UT time - '+anytim(time_interval(0),/date_only,/yoh), $
+		ytitle='counts/sec',color=255, $
+		title='Observing Summary Count Rates',charsize=chrsiz,xmargin=[9,1],ymargin=[2,2]
+	S=size(newrates)
+	for i=0,S[1]-1 do outplot,uttimes,newrates(i,*), color=colors(i+1)
+
+	CASE counts OF
+		1:  BEGIN
+		    xyouts,0.775,0.9,charsize=1.0,'3-6  KeV',color=colors(1),/normal
+		    xyouts,0.775,0.875,charsize=1.0,'6-12 KeV',color=colors(2),/normal
+		    xyouts,0.775,0.85,charsize=1.0,'12-25 KeV',color=colors(3),/normal
+		    xyouts,0.775,0.825,charsize=1.0,'25-50 KeV',color=colors(4),/normal
+		    xyouts,0.775,0.8,charsize=1.0,'50-100 KeV',color=colors(5),/normal
+		    xyouts,0.775,0.775,charsize=1.0,'100-300 KeV',color=colors(6),/normal
+		    xyouts,0.775,0.75,charsize=1.0,'300-1000 KeV',color=colors(7),/normal
+		    xyouts,0.775,0.725,charsize=1.0,'1000-2500 KeV',color=colors(8),/normal
+		    xyouts,0.775,0.7,charsize=1.0,'2500-17000 KeV',color=colors(9),/normal
+		    END
+
+		2:  BEGIN
+		    xyouts,0.675,0.91,charsize=1.0,'Soft X-rays :   3-12  KeV',color=colors(1),/normal
+		    xyouts,0.675,0.89,charsize=1.0,'Hard X-rays :  12-100 KeV',color=colors(2),/normal
+		    xyouts,0.675,0.87,charsize=1.0,'Gamma rays  : 0.1-20  MeV',color=colors(3),/normal
+		    END
+
+		3:  BEGIN
+		    xyouts,0.825,0.91,charsize=1.0,'3-12  KeV',color=colors(1),/normal
+		    xyouts,0.825,0.89,charsize=1.0,'25-300 KeV',color=colors(2),/normal
+		    xyouts,0.825,0.87,charsize=1.0,'0.3-17  MeV',color=colors(3),/normal
+		    END
+	ENDCASE			
+	if KEYWORD_SET(filename) then BEGIN
+			img=TVRD()
+			if not keyword_set(jpg) then write_png,filename,img,r,g,b ELSE write_jpg,filename,img,r,g,b
+				      ENDIF
+	ENDIF
+
+if KEYWORD_SET(mod_var) THEN BEGIN
+	wdef,2
+	oso->plot,/mod_variance
+	if KEYWORD_SET(filename) then BEGIN
+			img=TVRD()
+			if not keyword_set(jpg) then write_png,filename,img,r,g,b ELSE write_jpg,filename,img,r,g,b
+				      ENDIF
+			     ENDIF
+
+if KEYWORD_SET(part_rates) THEN BEGIN
+	wdef,3
+	bla=oso->getdata(class_name='particle_rate')
+	if bla(0) NE -1 then begin
+		oso->plot,/particle_rate
+		if KEYWORD_SET(filename) then BEGIN
+				img=TVRD()
+				if not keyword_set(jpg) then write_png,filename,img,r,g,b ELSE write_jpg,filename,img,r,g,b
+		endif
+	endif
+ENDIF
+
+if KEYWORD_SET(subpoint) then BEGIN
+	window,4,xsize=768,ysize=512
+	plot_hessi_pos,time_interval,/saa,/night
+	if KEYWORD_SET(filename) then BEGIN
+			img=TVRD()
+			tvlct,r,g,b,/GET
+			if not keyword_set(jpg) then write_png,filename,img,r,g,b ELSE write_jpg,filename,img,r,g,b
+				      ENDIF
+ENDIF
+obj_destroy,oso
+END
+
+
+
+
+

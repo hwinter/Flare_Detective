@@ -1,0 +1,1319 @@
+;+
+; Name: SPEX__DEFINE
+;
+; Purpose: Main OSPEX object
+;
+; Category: OSPEX
+;
+; Written: 2003, Kim Tolbert
+; Modifications:
+;   22-Jun-2004, Kim.  Replaced spex_interval_range with spex_intervals_tofit
+;   15-Jul-2004, Kim.  Added _extra to fitsummary and setupsummary so now they can
+;     pass that to text_output (for /print and /file_text for printing and sending to file)
+;   16-Jul-2004, Kim.  Moved preview stuff out of here and into spex_data and spex_drm - just
+;     call those from this preview
+;   20-Jul-2004, Kim.  Added filter info to fitsummary and setupsummary output.
+;   09-Jul-2004, Sandhia,  Added a method setParams to allow user to set parameters for OSPEX manually.
+;   26-Aug-2004, Sandhia,  Modified savefit to write fit parameters to a FITS file or IDL save
+;                          file based on a keyword value.
+;   08-Sep-2004, Sandhia,  implemented code to write the spex_summ structure to a fits file in
+;                             the format compatible with a RATE FITS file.  The new fits file will
+;                             now have three extensions - primary, rate and ebounds.
+;   09-Sep-2004, Sandhia,  restorefit (from FITS file option) will now call spex_read_fit_results routine
+;                             to copy the FITS results in OSPEX_summ structure.
+;   12-Sep-2004, Kim.  writescript wasn't writing bk_time_interval if bk_sep=1. Fixed.
+;   17-Sep-2004, Kim.  Added writing bk_rate and bk_error to FITS file
+;   19-Sep-2004, Kim.  Added 4 background things to plot in plot_summ, and
+;     2 bk things to calc in calc_summ.
+;   20-Sep-2004, Kim.  Added an extension to fit results FITS file for OSPEX control params
+;   24-Sep-2004, Sandhia, Filled mjdref, timezero, tstarti, tstopi, tstartf and tstopf, poisserr,
+;                              timesys, clockcor, observer and version fields of
+;                              rate_struct before calling mk_rate_hdr.  Deleted code to write these
+;                              parameters to fits file from add_rate_keywords routine.
+;-
+;---------------------------------------------------------------------------
+
+function spex::init, source=source, no_gui=no_gui, _extra=_extra
+
+if not since_version('5.6') then begin
+    print,'SORRY - you must have IDL Version 5.6 or later to run OSPEX.  Aborting.'
+    return,0
+endif
+
+if not keyword_set( source ) then source = obj_new( 'spex_fit', _extra=_extra )
+
+ret = self->framework::init( source = source, $
+                    ;control={spex_control}, $
+                    ;info = {spex_info}, $
+                    _extra = _extra )
+
+if not keyword_set(no_gui) then self -> gui, _extra=_extra
+
+return, ret
+end
+
+;--------------------------------------------------------------------------
+
+pro spex::set_file, file, $
+      srm=srm, $
+      drm=drm, $  ; same as srm
+      dialog=dialog, $
+      FOUND_FILE=found_file, $
+      TITLE=title, $
+      NOINTERACTIVE=nointeractive, $
+      QUIET=quiet, $
+      _REF_EXTRA=_ref_extra
+
+quiet = keyword_set(quiet)
+checkvar, dialog, 0
+
+checkvar, srm, drm
+checkvar, title, srm ? 'Please Select SRM file' : 'Please Select Spectrum File'
+
+found_file = loc_file( file, COUNT=count )
+exists = count GT 0
+
+msg = ''
+if dialog or (count eq 0 and not keyword_set(nointeractive))  then begin
+
+    found_file = ssw_pickfile( file=file, $
+                               exists=exists, $
+                               title=title, $
+                               filter=['*.fits','*.geny'], $
+                               _extra=_ref_extra )
+
+    case 1 of
+       found_file eq '': msg = 'ERROR: No file selected for reading.'
+       exists eq 0: msg = 'ERROR: Selected file not found - ' + found_file
+       else: msg = ''
+    endcase
+
+endif else begin
+    if not exists then msg = 'ERROR: Specified file not found - ' + file
+endelse
+
+if msg ne '' then begin
+    message, msg, /cont
+    return
+endif
+
+if srm then begin
+    oldfile = self -> get(/spex_drmfile)
+    self -> set, spex_drmfile = found_file
+    dummy = self -> getdata(class='spex_drm')
+    if dummy[0] eq -1 then self -> set, spex_drmfile=oldfile
+endif else begin
+    if strpos(strlowcase(found_file), '.fits') ne -1 then begin
+       oldfile = self -> get(/spex_specfile)
+       self -> set, spex_specfile = found_file
+       dummy = self -> getdata(class='spex_data')
+       if size(/tname, dummy) ne 'STRUCT' then self -> set, spex_specfile=oldfile else begin
+         spex_respinfo = self -> get(/spex_respinfo)
+         drmfile = is_number(spex_respinfo[0]) ? '' : loc_file(spex_respinfo)
+         self -> set, spex_drmfile=drmfile
+
+    ;   fits2spectrum, file=found_file, primary_header=p_hdr, ext_header=ext_hdr, err_code=err_code, err_msg=err_msg
+    ;   if err_msg ne '' then begin
+    ;       if not spex_get_nointeractive() then xmessage,err_msg else print,err_msg
+    ;   endif else begin
+    ;       instr = get_fits_instr(p_hdr)
+    ;       self -> set, spex_title = instr
+    ;
+    ;       ; some fits files (like hessi multi image) won't have ext_hdr
+    ;       if exist(ext_hdr) then drmfile = fxpar (ext_hdr,'RESPFILE', count=count) else count = 0
+    ;       if count eq 0 then drmfile = '' else drmfile = loc_file(drmfile)
+    ;
+    ;       self -> set, spex_specfile = found_file, spex_drmfile = drmfile
+    ;       ;if drmfile ne '' then self -> set, spex_drmfile = drmfile
+    ;   endelse
+       endelse
+    endif else print,"File isn't a FITS file.  Can't figure out what instrument it is for yet."
+
+endelse
+
+end
+
+;--------------------------------------------------------------------------
+
+function spex::getunits, class_name=class_name, _extra=_extra
+
+if keyword_set(class_name) then begin
+    obj = self -> get(/obj, class_name=class_name)
+    return, obj -> getunits(_extra=_extra)
+endif
+
+return, -1
+end
+
+;--------------------------------------------------------------------------
+
+function spex::getdata, _extra=_extra
+
+@spex_insert_catch
+
+data = self -> framework::getdata(_extra=_extra)
+
+return, data
+
+end
+
+;--------------------------------------------------------------------------
+
+pro spex::cleanup
+
+plotman_obj = self -> get(/spex_plotman_obj)
+if obj_valid(plotman_obj) then obj_destroy, plotman_obj
+
+self -> framework::cleanup
+
+end
+
+;--------------------------------------------------------------------------
+; loop only applies to defining bk_time when bk_sep is set - loops through the
+; separate energy bands
+
+pro spex::intervals, $
+    eband=eband, $
+    erange=erange, $
+    bk_time=bk_time, $
+    loop=loop, $
+    bk_eband=bk_eband, $
+    fit=fit, $
+    _extra=_extra
+
+case 1 of
+
+    keyword_set(eband) : (self -> get(/obj,class_name='spex_data')) -> intervals, _extra=_extra
+
+    keyword_set(erange) : (self -> get(/obj,class_name='spex_fitrange')) -> intervals, _extra=_extra
+
+    keyword_set(bk_eband) : (self -> get(/obj,class_name='spex_bkint')) -> intervals, /energy, _extra=_extra
+
+    keyword_set(bk_time) : begin
+       bk_sep = self -> get(/spex_bk_sep)
+       if keyword_set(loop) and bk_sep then begin
+         bands = self -> get(/spex_bk_eband)
+         if bands[0] ne -1 then begin
+          for ib = 0,n_elements(bands)/2-1 do begin
+              self -> plotman, class_name='spex_data', interval=bands[*,ib]
+              self -> intervals, /bk_time, this_band=ib, _extra=_extra
+          endfor
+         endif else message, /cont, 'No background energy bands set.  Aborting.'
+       endif else (self -> get(/obj,class_name='spex_bkint')) -> intervals, _extra=_extra
+       end
+
+    keyword_set(fit) : (self -> get(/obj,class_name='spex_fitint')) -> intervals, _extra=_extra
+
+    else: (self -> get(/obj,class_name='spex_fitint')) -> intervals, _extra=_extra
+endcase
+
+end
+
+;------------------------------------------------------------------------------
+
+pro spex::xfit_comp, _extra=_extra
+(self -> get(/obj,class='spex_fit')) -> xfit_comp, _extra=_extra
+end
+
+;------------------------------------------------------------------------------
+
+;pro spex::plot_spectrum, _extra=_extra
+;(self -> get(/obj,class='spex_fit')) -> plot_spectrum, _extra=_extra
+;end
+
+;------------------------------------------------------------------------------
+
+pro spex::fitsummary, out=out, _extra=_extra
+
+struct = self -> get(/spex_summ)
+
+npad = 15
+
+if not self->valid_summ_params() then out = 'No Fit Parameters stored yet.' else begin
+    times = format_intervals(struct.spex_summ_time_interval, /ut, /prefix)
+    out = ['Current Fit Results     ' + strmid (anytim(!stime, /trunc, /vms), 0, 17), $
+       '', $
+       'Fit Function: ' + struct.spex_summ_fit_function + $
+       '   Detectors Used: ' + self -> get(/spex_detectors), $
+       '', $
+       strpad('Fit Params', npad) + $
+       strpad('Sigma', npad) + $
+       strpad('Start Param',npad) + $
+       strpad('Minimum',npad) + $
+       strpad('Maximum', npad) + $
+       strpad('Free', npad) ]
+
+    for i=0,n_elements(times)-1 do begin
+       if not struct.spex_summ_fit_done[i] then goto, next
+       eindex = where (struct.spex_summ_emask[*,i])
+       if eindex[0] eq -1 then goto, next
+       eranges = find_contig_ranges(struct.spex_summ_energy[*,eindex])
+       out =[out, $
+         '', $
+         times[i] + ', Filter: ' + trim(struct.spex_summ_filter[i]) + $
+          '  Energy Range: ' + arr2str(format_intervals(eranges, format='(f9.2)')), $
+         '  Chisq=' + trim(struct.spex_summ_chisq[i],'(f8.2)') + $
+          '  MaxIter=' + trim(struct.spex_summ_maxiter[i]) + $
+          '  #Iter=' + trim(struct.spex_summ_niter[i]) + $
+          '  Uncert=' + trim(struct.spex_summ_uncert[i], '(f4.2)') + $
+          '  Stop Msg=' + struct.spex_summ_stop_msg[i] ]
+       nparams = n_elements(struct.spex_summ_params[*,i])
+       for ip = 0, nparams-1 do begin
+         out = [out, $
+         strpad(trim(struct.spex_summ_params[ip,i]), npad) + $
+         strpad(trim(struct.spex_summ_sigmas[ip,i]), npad) + $
+         strpad(trim(struct.spex_summ_starting_params[ip,i]), npad) + $
+         strpad(trim(struct.spex_summ_minima[ip,i]), npad) + $
+         strpad(trim(struct.spex_summ_maxima[ip,i]), npad) + $
+         strpad(trim(struct.spex_summ_free_mask[ip,i]+0), npad) ]
+       endfor
+       next:
+    endfor
+endelse
+
+;prstr, out
+
+;xmessage, out, font='fixedsys', xsize=max(strlen(out)), ysize=n_elements(out)+5, $
+;   title='Fit Results'
+
+text_output, out, title='Fit Results', _extra=_extra
+end
+
+;------------------------------------------------------------------------------
+
+; spec and drm are just flags 0/1 saying which file to preview.
+; gets the file name out of the parameters.
+pro spex::preview, spec=spec, drm=drm, nomore=nomore, out=out
+
+error=0
+;catch,error
+if error then begin
+    catch, /cancel
+    ;print,'in spex::preview catch handler'
+    return
+endif
+
+spec = keyword_set(spec)
+drm = keyword_set(drm)
+if not (spec or drm) then begin
+    spec=1 & drm=1
+endif
+
+;spex_data = self -> get(/obj, class='spex_data')
+;this_strat = spex_data -> getstrategy()
+
+out = ''
+
+if spec then begin
+
+    (self -> get(/obj,class='spex_data')) -> preview, out=out_data, /nomore
+    out = [out, out_data]
+
+;   this_strat -> preview, spectrum,  errors,  livetime,  $
+;     spex_respinfo, spex_file_time,  spex_ut_edges,  spex_ct_edges,  $
+;     spex_area, spex_title, spex_detectors,  spex_units, err_code=err_code
+;
+;   if err_code then begin
+;
+;     out = [out, 'No Spectrum Input Data available yet.']
+;
+;   endif else begin
+;     specfile = self -> get(/spex_specfile)
+;     if specfile eq '' then specfile = 'None'
+;     n_eband = n_elements (spex_ct_edges[0,*])
+;     emm = format_intervals (minmax (spex_ct_edges))
+;     n_time = n_elements (spex_ut_edges[0,*])
+;     tr = format_intervals([spex_file_time[0], spex_file_time[1]], /ut)
+;     resp_info = spex_respinfo
+;     if is_number(resp_info[0]) then begin
+;      n = n_elements(resp_info)
+;      resp_info = arr2str(trim(resp_info[0:(n-1)<10],'(g8.2)'))
+;      if n gt 10 then resp_info=resp_info + '...'
+;     endif
+;     if not is_string(resp_info) then resp_info = 'None'
+;
+;     out = [out, $
+;      'Spectrum File Summary', $
+;      'File name: ' + specfile, $
+;      'Data type: ' + obj_class(this_strat), $
+;      '# Time Bins: ' + trim(n_time) + '  Time range: ' + tr, $
+;      '# Energy Bins: ' + trim(n_eband) + '  Energy range: ' + emm, $
+;      'Area: ' + trim(spex_area), $
+;      'Detectors Used: ' + spex_detectors, $
+;      'Response Info: ' + resp_info]
+;   endelse
+
+endif
+
+if drm then begin
+
+    if n_elements(out) gt 1 then out=[out,'','']
+    (self -> get(/obj,class='spex_drm')) -> preview, out=out_drm, /nomore
+    out = [out, out_drm]
+
+endif
+
+if not keyword_set(nomore) and n_elements(out) gt 1 then prstr, strjustify(out,/box)
+
+end
+
+;------------------------------------------------------------------------------
+
+pro spex::setupsummary, short=short, out=out, _extra=_extra
+
+enab = ['Disabled','Enabled']
+filetime = self -> get(/spex_file_time)
+file_units = self -> get(/spex_data_origunits)
+
+out = ['Current OSPEX setup     ' + strmid (anytim(!stime, /trunc, /vms), 0, 17), $
+    '' ]
+
+self->preview, /nomore, out=out_preview
+out = [out, out_preview]
+
+bk_sep = self -> get(/spex_bk_sep)
+bk_eband = self -> get(/spex_bk_eband)
+a_bands = format_intervals(bk_eband) + ' keV'
+neband = bk_sep ? n_elements(bk_eband)/2 : 1
+a_neband = bk_sep ? '   Number of bands: ' + trim(neband) : ''
+bk_out = 'Separate Background in Energy Bands: ' + enab[bk_sep] + a_neband
+
+for i=0,neband-1 do begin
+    bk_time = self -> get(this_band=i, /this_time)
+    bk_order = self -> get(this_band=i, /this_order)
+    bk_out = [bk_out, $
+       'Background Energy Band: ' + a_bands[i] + '  Polynomial Order: ' + trim(bk_order) ]
+    if bk_time[0] ne -1 then begin
+       a_times = format_intervals(bk_time, /ut)
+       for j=0,n_elements(a_times)-1 do bk_out=[bk_out, '     ' + a_times[j] ]
+    endif else bk_out=[bk_out,'     No times defined for this band.']
+endfor
+
+
+out = [out, '', bk_out]
+
+fit_int = self -> get(/spex_fit_time_interval)
+filter = self -> get(/spex_fitint_filter)
+if fit_int[0] eq -1 then fit_out = 'No fit time intervals defined' else begin
+    fit_out = 'Number of fit time intervals: ' + trim(n_elements(fit_int[0,*]))
+    if not keyword_set(short) then $
+       fit_out = [fit_out, format_intervals(fit_int, /ut, /prefix) + '   Filter: ' + trim(filter)]
+endelse
+out = [out, '', fit_out]
+
+fit_function = self -> get(/fit_function)
+loop_mode = (['Automatic', 'Manual on First Interval', 'Manual on All Intervals'])[self->get(/spex_fit_manual)]
+out = [out, $
+    '', $
+    'Fit Function: ' + fit_function, $
+    'Start method: ' + self->get(/spex_fit_start_method) + $
+       '  Loop Mode through intervals: ' + loop_mode ]
+
+npad = 15
+out = [out, $
+    'Starting parameters: ', $
+    strpad('Fit Params', npad) + $
+    strpad('Minimum',npad) + $
+    strpad('Maximum', npad) + $
+    strpad('Free', npad) ]
+
+if self->get(/spex_fit_start_method) eq 'default' then $
+    struct = fit_function_defaults(fit_function) $
+else $
+    struct = self -> get(/fit_comp)
+nparams = n_elements(struct.fit_comp_params)
+for ip = 0, nparams-1 do begin
+    out = [out, $
+    strpad(trim(struct.fit_comp_params[ip]), npad) + $
+    strpad(trim(struct.fit_comp_minima[ip]), npad) + $
+    strpad(trim(struct.fit_comp_maxima[ip]), npad) + $
+    strpad(trim(struct.fit_comp_free_mask[ip]+0), npad) ]
+endfor
+
+erange = self -> get(/spex_erange)
+a_erange = same_data(erange,[0.,0.]) ? 'All' : format_intervals(erange, format='(f9.2)')
+if a_erange[0] eq 'None' then a_erange = 'All'
+int_tofit = self -> get(/spex_intervals_tofit)
+if int_tofit[0] eq -1 then a_int_tofit = 'All' else begin
+    d1 = find_contig(int_tofit, d2, ind)
+    if size(ind,/n_dim) gt 1 then ind = tranpose(ind)
+    a_int_tofit = format_intervals(int_tofit[ind])
+endelse
+
+out = [out, $
+    '', $
+    'Energy range to fit over: ' + arr2str(a_erange) + ' keV', $
+    'Intervals to fit: ' + a_int_tofit ]
+
+text_output, out, title='Setup Summary', _extra=_extra
+
+end
+
+;--------------------------------------------------------------------------
+
+pro spex::dofit, _extra=_extra
+
+fit = self -> getdata(class_name='spex_fit', _extra=_extra, /force)
+
+end
+
+;--------------------------------------------------------------------------
+
+; Function to calculate quantities from the spex_summ data.  Currently available values for item:
+; ct_flux - data in count flux
+; ph_flux - data in photon flux
+; bk_ct_flux - background count flux
+; bk_ph_flux - background photon flux
+; ct_model - model in count flux
+
+function spex::calc_summ, summ=summ, item=item, this_interval=this_interval, errors=errors
+
+checkvar, summ, self -> get(/spex_summ)
+checkvar, item, 'ph_flux'
+checkvar, this_interval, 0
+
+ewidth = get_edge_products(summ.spex_summ_energy, /width)
+ninterval = n_elements(this_interval)
+if ninterval gt 1 then ewidth = rebin (ewidth, n_elements(ewidth), ninterval)
+area = summ.spex_summ_area
+conv = summ.spex_summ_conv[*,this_interval]
+
+case item of
+    'ct_flux': begin
+       val = summ.spex_summ_ct_rate[*,this_interval] / area / ewidth
+       errors = summ.spex_summ_ct_error[*,this_interval] / area / ewidth
+       end
+    'ph_flux': begin
+       val = f_div (summ.spex_summ_ct_rate[*,this_interval] / area / ewidth, conv)
+       errors = f_div (summ.spex_summ_ct_error[*,this_interval] / area / ewidth, conv)
+       end
+    'bk_ct_flux': begin
+       val = summ.spex_summ_bk_rate[*,this_interval] / area / ewidth
+       errors = summ.spex_summ_bk_error[*,this_interval] / area / ewidth
+       end
+    'bk_ph_flux': begin
+       val = f_div (summ.spex_summ_bk_rate[*,this_interval] / area / ewidth, conv)
+       errors = f_div (summ.spex_summ_bk_error[*,this_interval] / area / ewidth, conv)
+       end
+
+    'ct_model': val = summ.spex_summ_ph_model[*,this_interval] * conv
+    else: begin
+       print,'Unrecognized summ_calc choice.'
+       return, -1
+       end
+endcase
+
+return, val
+end
+
+;--------------------------------------------------------------------------
+
+; xplot or yplot = 'time', 'energy',
+;      'ct_rate', 'ct_error', 'ct_flux', 'ph_flux',
+;     'bk_rate', 'bk_error', 'bk_ct_flux', bk_ph_flux',
+;      'ct_model', 'ph_model',
+;      'conv', 'resid',
+;      'param', 'sigma', chisq'
+; Note: Only combinations of xyplot,yplot that make sense are allowed (e.g can't plot fit param vs energy)
+; xindex, yindex only apply when xplot, yplot is an item requiring an index (e.g. fit param)
+; this_interval - scalar or array of interval numbers to plot (for xplot=energy plots)
+; psym, xlog, ylog - if passed, will override what plot_summ sets.
+; no_plotman - If set, plot in regular window, not plotman window
+; Can also pass in most plot keywords in _extra
+
+pro spex::plot_summ, table=table, $
+    xplot=xplot, xindex=xindex, $
+    yplot=yplot, yindex=yindex, $
+    this_interval=this_interval, $
+    psym=psym, xlog=xlog, ylog=ylog, $
+    no_plotman=no_plotman, $
+    err_msg=err_msg, $
+    _extra=_extra
+
+use_plotman = (keyword_set(no_plotman) eq 0)
+
+get_table = arg_present(table)
+
+tmp = {summ_plot, in_name: '', summ_name: '', label: '', vs_time: 0, vs_energy: 0, vs_any: 0, index: 0, plot_func: 0}
+
+table = replicate(tmp,17)
+table[0] = {summ_plot, 'time', 'spex_summ_time_interval', 'Time', 0, 0, 0, 0, 0}
+table[1] = {summ_plot, 'energy', 'spex_summ_energy', 'Energy (keV)', 0, 0, 0, 0, 0}
+table[2] = {summ_plot, 'ct_rate', 'spex_summ_ct_rate', 'Count Rate', 0, 1, 0, 0, 1}
+table[3] = {summ_plot, 'ct_error', 'spex_summ_ct_error', 'Error in Count Rate', 0, 1, 0, 0, 0}
+table[4] = {summ_plot, 'ct_flux', '', 'Count Flux', 0, 1, 0, 0, 1}
+table[5] = {summ_plot, 'ph_flux', '', 'Photon Flux', 0, 1, 0, 0, 1}
+table[6] = {summ_plot, 'bk_rate', 'spex_summ_bk_rate', 'Background Count Rate', 0, 1, 0, 0, 0}
+table[7] = {summ_plot, 'bk_error', 'spex_summ_bk_error', 'Error in Background Count Rate', 0, 1, 0, 0, 0}
+table[8] = {summ_plot, 'bk_ct_flux', '', 'Background Count Flux', 0, 1, 0, 0, 0}
+table[9] = {summ_plot, 'bk_ph_flux', '', 'Background Photon Flux', 0, 1, 0, 0, 0}
+table[10] = {summ_plot, 'ph_model', 'spex_summ_ph_model', 'Model Photon Flux', 0, 1, 0, 0, 0}
+table[11] = {summ_plot, 'ct_model', '', 'Model Count Flux', 0, 1, 0, 0, 0}
+table[12] = {summ_plot, 'conv', 'spex_summ_conv', 'Conversion Factors', 0, 1, 0, 0, 0}
+table[13] = {summ_plot, 'resid', 'spex_summ_resid', 'Residuals', 0, 1, 0, 0, 0}
+table[14] = {summ_plot, 'param', 'spex_summ_params', 'Fit Parameter ', 1, 0, 1, 1, 0}
+table[15] = {summ_plot, 'sigma', 'spex_summ_sigmas', 'Sigma in Fit Parameter ', 1, 0, 1, 1, 0}
+table[16] = {summ_plot, 'chisq', 'spex_summ_chisq', 'Chi-Squared', 1, 0, 1, 0, 0}
+
+if get_table then return
+
+if not self->valid_summ_params() then begin
+    err_msg = 'There are no fit results stored yet.  Aborting.'
+    message, err_msg, /cont
+    return
+endif
+
+checkvar, xplot,'time'
+checkvar, xindex, 0
+checkvar, yplot, 'param'
+checkvar, yindex, 0
+checkvar, this_interval, self->get(/spex_interval_index)
+
+err_msg = ''
+
+xplot = strlowcase(xplot)
+yplot = strlowcase(yplot)
+
+summ = self -> get(/spex_summ)
+
+summ_tags = strlowcase(tag_names(summ))
+
+q = where (strpos(table.in_name, xplot) ne -1, count)
+if count gt 0 then ix = q[0]
+q = where (strpos(table.in_name, yplot) ne -1, count)
+if count gt 0 then iy = q[0]
+
+if exist(ix) and exist(iy) then begin
+
+    fitplot_obj = -1
+
+    if is_member(table[iy].in_name, ['time','energy']) then goto, errorexit
+
+    xlabel = table[ix].label
+    ylabel = table[iy].label
+    if table[ix].index then xlabel = xlabel + trim(xindex)
+    if table[iy].index then ylabel = ylabel + trim(yindex)
+
+    title = ylabel + ' vs ' + (xlabel eq '' ? 'Time' : xlabel)
+
+    xtag = (where (summ_tags eq table[ix].summ_name) )[0]
+    ytag = (where (summ_tags eq table[iy].summ_name) )[0]
+
+    xcalc = xtag eq -1
+    ycalc = ytag eq -1
+
+    if table[ix].in_name eq 'time' then begin
+       if not table[iy].vs_time then goto, errorexit
+       xdata = summ.(xtag)
+       utbase = min(xdata)
+       xdata = xdata - utbase
+       q = where (summ.spex_summ_fit_done eq 0., count)  ; fill in NaN's for intervals that don't have fits
+       if count gt 0 then xdata[*,q] = !values.f_nan
+       ydata = ycalc ? self->calc_summ(summ=summ, item=table[iy].in_name) : $
+         reform( table[iy].index ?  (summ.(ytag))[yindex,*] : summ.(ytag) )
+       plot_type = 'utplot'
+       xlabel = ''
+       label = 'Fit Function: ' + summ.spex_summ_fit_function
+       checkvar,xlog,0
+       checkvar,ylog,0
+       checkvar,psym,10
+
+    endif else begin
+       if table[ix].in_name eq 'energy' then begin
+         if not table[iy].vs_energy then goto, errorexit
+         xdata = summ.spex_summ_energy
+         yname = table[iy].in_name
+         if ycalc then begin
+          ydata = self->calc_summ(summ=summ, item=yname, this_interval=this_interval, errors=errors)
+          if exist(errors) then yerr = errors
+         endif else begin
+          ydata = (summ.(ytag))[*,this_interval]
+          if yname eq 'ct_rate' then yerr = (summ.spex_summ_ct_error)[*,this_interval]
+          if yname eq 'bk_rate' then yerr = (summ.spex_summ_bk_error)[*,this_interval]
+         endelse
+
+         if table[iy].plot_func then begin
+          units = strpos(yname, 'rate') eq -1 ? 'flux' : 'rate'
+          photons = strpos(yname,'ph') eq -1 ? 0 : 1
+          fitplot_obj = self->make_fitplot_obj ( spex_units=units, $
+              photons=photons, /overlay, this_interval=this_interval, /use_fitted)
+         endif
+
+         plot_type = 'xyplot'
+         dim1_id = trim(this_interval) +'. ' + format_intervals(summ.spex_summ_time_interval[*,this_interval], /ut)
+         checkvar,xlog,1
+         checkvar,ylog, (yname ne 'resid')
+         checkvar,psym,10
+
+       endif else begin
+         if not table[ix].vs_any then goto, errorexit
+         if not table[iy].vs_any then goto, errorexit
+         xdata = xcalc ? self->calc_summ(summ=summ, item=table[ix].in_name) : $
+          reform( table[ix].index ?  (summ.(xtag))[xindex,*] : summ.(xtag) )
+         ydata = ycalc ? self->calc_summ(summ=summ, item=table[iy].in_name) : $
+          reform( table[iy].index ?  (summ.(ytag))[yindex,*] : summ.(ytag) )
+         ydata = reform( table[iy].index ?  (summ.(ytag))[yindex,*] : summ.(ytag) )
+         times = summ.spex_summ_time_interval
+         q = where (summ.spex_summ_fit_done eq 0., count)
+         if count gt 0 then begin
+          xdata[q] = !values.f_nan
+          ydata[q] = !values.f_nan
+         endif
+         plot_type = 'xyplot'
+         q = where (times[0,*] ne 0.)
+         label = ['Fit Function: ' + summ.spex_summ_fit_function, $
+          format_intervals(minmax(times[*,q]), /ut)]
+         checkvar,xlog,0
+         checkvar,ylog,0
+         checkvar,psym,-3
+       endelse
+
+    endelse
+
+    checkvar, utbase, 0
+    plot_params = {plot_type:plot_type, $
+       xdata: xdata, $
+       utbase: anytim(utbase,/vms), $
+       ydata: ydata , $
+       id:title, $
+       data_unit:ylabel, $
+       xtitle:xlabel, $
+       overlay_obj: fitplot_obj }
+    if exist(dim1_id) then plot_params=add_tag (plot_params, dim1_id, 'dim1_id')
+    if exist(yerr) then plot_params=add_tag (plot_params, yerr, 'edata')
+    if exist(label) then plot_params=add_tag(plot_params, label, 'label')
+
+    self -> do_plot, plotman=use_plotman, plot_params=plot_params, psym=psym, xlog=xlog, ylog=ylog, _extra=_extra
+    return
+
+endif
+
+errorexit:
+err_msg = ['Invalid choices for x,y axes.', $
+    'Valid combinations are:', $
+    '  X=Time,   Y=Fit Param, Sigma in Fit Param, or Chi-Squared' , $
+    '  X=Energy, Y=Count Rate, Error in Count Rate, Photon Flux, Residuals', $
+    '              Background Count Rate, Error in Background Count Rate, Background Count Flux, Background Photon Flux', $
+    '  X=Fit param, Sigma, Chi-Squared,  Y=Fit param, Sigma, Chi-Squared']
+prstr,/nomore, err_msg
+
+end
+
+;--------------------------------------------------------------------------
+
+function spex::get_script_params, error=error
+
+filename = 'spex_params_for_script.txt'
+file = concat_dir('SSW_OSPEX', filename)
+file  = findfile(file, count=count)
+if count eq 0 then begin
+    message,'Can not find file ' + filename + '.  Aborting.  Is SSW_OSPEX defined?',/cont
+    retall
+endif
+
+params = rd_ascii(file, error=error)
+if error then return, ''
+
+params = strlowcase(trim(strnocomment(params, /remove)))
+
+return, params
+end
+
+;--------------------------------------------------------------------------
+
+; Procedure to allow use to set parameters manually.
+;
+pro spex::setParams
+
+
+plotman_obj = self->get_plotman_obj(/nocreate,valid=valid)
+if valid then group=plotman_obj->get(/plot_base)
+
+control = self->get(/control)
+
+status = xset_struct("OSPEX", group, control, _extra)
+
+if status then self->set,_extra=_extra
+end
+
+;--------------------------------------------------------------------------
+
+; Procedure to write a script to set up an ospex session using the parameter setup
+; in the current session of ospex
+;
+; Keywords:
+; outfile - name of script file to write.  If not set, user will be prompted for name
+; restorefit - If set, then save fit results in a file, and include the restorefit
+;   command in the script to restore the results from that file
+; fit_outfile - if restorefit is set, then this is name of fit results output file.  If
+;   not supplied, user will be prompted for name
+; gui - if set, command in script that creates ospex object will start with gui
+;
+
+pro spex::writescript, outfile=outfile, $
+    restorefit=restorefit, $
+    fit_outfile=fit_outfile, $
+    gui=gui, sav=sav, writefunction=writefunction
+
+params = self -> get_script_params(error=error)
+if error then return
+
+if size(outfile, /tname) ne 'STRING' then begin
+    outfile = 'ospex_script.pro'
+    outfile = dialog_pickfile (path=curdir(), filter='*.pro', $
+       file=outfile, $
+       title = 'Select output file',  $
+       group=group, $
+       get_path=path)
+endif
+
+if outfile ne '' then begin
+
+    if keyword_set(restorefit) then $
+       self -> savefit, outfile=fit_outfile, sav=sav else $
+       fit_outfile = ''
+
+    def_obj = ospex(/no_gui)
+    defp = def_obj->get()
+    deftags = strlowcase(tag_names(defp))
+
+    curp = self->get()
+    curtags = strlowcase(tag_names(curp))
+
+    gui = keyword_set(gui) ? '()' : '(/no_gui)'
+
+    IF keyword_set(writefunction) THEN BEGIN
+       outfile_justname=strsplit(outfile,path_sep(),/extract)
+       outfile_justname=outfile_justname(n_elements(outfile_justname)-1)
+       outfile_justname=(strsplit(outfile_justname,'.',/extract))[0]
+
+        out = ['; ospex script created ' + systime(0), $
+       ';', $
+       'PRO '+outfile_justname+',obj=obj',$
+       'obj = ospex'+gui]     
+    ENDIF ELSE $
+      out = ['; ospex script created ' + systime(0), $
+       ';', $
+       'obj = ospex'+gui]
+
+    bk_sep = self->get(/spex_bk_sep)
+
+    for i = 0,n_elements(params)-1 do begin
+       qc = where(params[i] eq curtags, countc)
+       qd = where (params[i] eq deftags, countd)
+       if countc gt 0 and countd gt 0 then begin
+         ic = qc[0]
+         id = qd[0]
+         if not same_data(curp.(ic), defp.(id)) then begin
+          val = curp.(ic)
+
+          ; We need absolute times to be anytim ascii format (not seconds) or
+          ;   we will lose precision.
+          ; This is a kludge because we're assuming that all time params have 'time' in name
+          ;   and are double.  If < 1.e6, it's a relative time.
+          if size(val, /tname) eq 'DOUBLE' and strpos(params[i], 'time') ne -1 then begin
+              if val[0] gt 1.e6 then val = anytim(val,/vms)
+          endif
+
+          ; If separate background bands, the bk times are pointer arrays - have to set per band, but
+          ; otherwise, set normally
+          if params[i] eq 'spex_bk_time_interval' or $
+              params[i] eq 'spex_bk_eband' or $
+              params[i] eq 'spex_bk_order' then begin
+              bk_eband = self -> get(/spex_bk_eband)
+              if not bk_sep then bk_eband = bk_eband[*,0]
+              nband = (bk_eband[0] eq -1) ? 1 : n_elements(bk_eband)/2
+              case params[i] of
+              'spex_bk_time_interval': begin
+                 for ib=0,nband-1 do begin
+                   time = self -> get(this_band=ib, /this_time)
+                   if time[0] gt 1.e6 then time = anytim(time, /vms)
+                   str = bk_sep ? 'this_band=' + val2string(ib) + ', this_time=' + val2string(time) : $
+                    'spex_bk_time_interval=' + val2string(time)
+                   out = [out, 'obj-> set, ' + str]
+                 endfor
+                 end
+              'spex_bk_order': begin
+                 order = self -> get(/spex_bk_order)
+                 if not bk_sep then order = order[0]
+                 out = [out, 'obj-> set, spex_bk_order=' + val2string(order)]
+                 end
+              'spex_bk_eband': if bk_sep then out = [out, 'obj-> set, spex_bk_eband=' + val2string(bk_eband)]
+              endcase
+          endif else begin
+              sval = val2string(val)
+print,params[i] + '= ', +sval
+              if sval[0] ne 'BAD' then out = [out, 'obj-> set, ' + params[i] + '= ' + sval ]
+          endelse
+         endif
+       endif
+    endfor
+
+    if fit_outfile eq '' then begin
+       fitmsg = '.  No fit results saved; no restorefit in script.'
+
+    endif else begin
+       out = [out, "obj -> restorefit, file='" + fit_outfile + "'"]
+       fitmsg = ' Script includes restorefit command.'
+    endelse
+
+    out = [out, 'end']
+
+    ; Wrap long lines on ', '
+    out = wrap_txt(out, delim=', ', length=90)
+
+
+    wrt_ascii, out, outfile, err_msg=err_msg
+    if err_msg eq '' then print,'Wrote commands in script file ' + outfile + fitmsg
+
+endif else print,'No output file name selected. No file written.'
+
+if exist(def_obj) then obj_destroy, def_obj
+
+end
+
+;--------------------------------------------------------------------------
+
+pro spex::savefit, outfile=outfile, sav=sav
+
+; Check sav keyword to determine the format for the fit results file
+if (keyword_set( sav )) then begin
+   self->savefit_sav, outfile=outfile
+endif else begin
+   self->savefit_fits, outfile=outfile
+endelse
+
+end
+
+;--------------------------------------------------------------------------
+
+pro spex::savefit_sav, outfile=outfile
+
+if size(outfile, /tname) ne 'STRING' then begin
+    atim = trim( str_replace(anytim(!stime, /vms, /date), '-', '_') )
+    outfile = 'ospex_results_'+atim+'.geny'
+    outfile = dialog_pickfile (path=curdir(), filter='*.geny', $
+       file=outfile, $
+       title = 'Select output save file name',  $
+       group=group, $
+       get_path=path)
+endif
+
+if outfile ne '' then begin
+    fit_results = self -> get(/spex_summ)
+    savegenx, fit_results, file=outfile, /over
+    message, 'Fit results saved in file ' + outfile, /info
+endif else message, 'No output file name selected.  Not saving fit results.', /info
+
+end
+
+;--------------------------------------------------------------------------
+
+pro spex::savefit_fits, outfile=outfile
+
+version = 1.0   ; version number of file format
+
+summ = self->get(/spex_summ)
+instrument = (self->get(/spex_data_units)).DATA_NAME
+
+IF (n_elements(summ.SPEX_SUMM_TIME_INTERVAL) gt 1) THEN BEGIN
+    if size(outfile, /tname) ne 'STRING' then begin
+        atim = trim( str_replace(anytim(!stime, /vms, /date), '-', '_') )
+        outfile = 'ospex_results_'+atim+'.fits'
+        outfile = dialog_pickfile (path=curdir(), filter='*.fits', $
+           file=outfile, $
+           title = 'Select output FITS file name',  $
+           group=group, $
+           get_path=path)
+    endif
+
+
+    if outfile ne '' then begin
+       ; Create a structure with keyword values - used for RATE extension
+        telescop = ' '
+        if (strcmp(instrument, 'RHESSI')) then $
+           telescop = instrument
+
+        rate_struct = {rate_header}
+
+        rate_struct.telescope = telescop
+        rate_struct.instrument = instrument
+        rate_struct.timeunit = "d"
+        rate_struct.timeref = "LOCAL"
+        rate_struct.tassign = "SATELLITE"
+        rate_struct.object = 'Sun'
+        rate_struct.origin = instrument
+        dummy = self->get(/spex_summ_energy)
+        nchan = n_elements(dummy)/2   ; spex_summ_energy is 2-d array
+        rate_struct.detchans = nchan
+        rate_struct.chantype = 'PHA'
+        rate_struct.areascal = 1.0
+        rate_struct.backscal = 1.0
+        rate_struct.corrscal = 1.0
+        rate_struct.exposure = 1.0
+        rate_struct.grouping = 0
+        rate_struct.quality = 0
+        rate_struct.clockcor = 'T'
+        mjdref = anytim('00:00 1-Jan-79', /MJD)
+        rate_struct.mjdref = mjdref.mjd
+        rate_struct.timesys = strmid(anytim('00:00 1-Jan-79', /ccsds), 0, 19)
+        rate_struct.equinox = 2000.0
+        rate_struct.radecsys = 'FK5'
+        rate_struct.hduclas2 = 'TOTAL'   ; Extension contains a spectrum.
+        rate_struct.poisserr = 'F'
+        rate_struct.version = '1.0'
+        rate_struct.author = 'OSPEX'
+
+        timeInterval = self->get(/spex_summ_time_interval)
+        ntimes = n_elements(timeInterval)/2   ; spex_summ_time_interval is 2-d array
+
+        timezero = anytim( [timeInterval[0,0], timeInterval[1,ntimes-1]],/mjd)
+        timezerf = 0.0
+
+        ; Integer part of reference time minus mjdref
+        rate_struct.timezero = (timezero[0].mjd-rate_struct.mjdref)+timezerf
+
+        rate_struct.tstarti = timezero[0].mjd-rate_struct.mjdref
+        rate_struct.tstartf = double(timezero[0].time) /8.64d7   ; fraction of the day in seconds
+        rate_struct.tstopi = timezero[1].mjd-rate_struct.mjdref
+        rate_struct.tstopf = double(timezero[1].time) / 8.64d7   ; fraction of the day in seconds
+        rate_struct.telapse = double(((rate_struct.tstopi-rate_struct.tstarti) + (rate_struct.tstopf-rate_struct.tstartf))*86400.0)
+        rate_struct.exposure = timeInterval[1,ntimes-1] - timeInterval[0,0]
+
+
+        sdate = anytim(/ccsds, minmax(anytim( summ.SPEX_SUMM_TIME_INTERVAL, /sec )))
+
+
+        ; Create a fitswrite object
+        fptr = fitswrite()
+
+        ; Set filename for fptr object
+        fptr->Set, filename=outfile
+
+        ; Create primary header, add keywords and write to file
+        header = fptr->getheader()
+        self->add_primary_keywords, fptr, rate_struct, sdate, version
+        fptr->write_primary, outfile
+
+
+        ; Create rate header, add keywords and write to file
+        rate_hdr = mk_rate_hdr( header, rate_struct, N_ROWS=ntimes, fptr=fptr, $
+                               ERR_MSG=err_msg, ERR_CODE=err_code )
+        fptr->Set, extension=1
+        fptr->setheader, rate_hdr
+        self->add_rate_keywords, fptr, rate_struct, sdate, timeInterval, ntimes, version
+        input = self->prepare_rate_struct(ntimes, nchan)
+        fptr->write, input
+
+
+        ; Create ebounds extension, add keywords and write to file
+        fptr->Set, extension=2
+        fptr->setheader, hdr, /init
+        self->add_ebounds_keywords, fptr, rate_struct, sdate, version
+        input = self->prepare_ebounds_struct(nchan)
+        fptr->write, input
+
+       ; Create OSPEX control parameter extension
+       fptr->setheader, hdr, /init
+       self->add_primary_keywords, fptr, rate_struct, sdate, version
+       fptr->Addpar, 'EXTNAME', 'OSPEX Control Parameters', 'Extension name'
+       control = self ->get(/control)
+       control = str_sub2top(control, err_msg=err_msg, err_code=err_code)
+       if err_code then message, err_msg, /cont else fptr->write,control
+
+        message, 'Fit results saved in file ' + outfile, /info
+    endif else print,'No output file name selected.  Not saving fit results.'
+
+ENDIF ELSE BEGIN
+    message, 'Time Interval is null.  Not saving fit results.', /info
+    outfile = ' '
+ENDELSE
+
+end
+
+;--------------------------------------------------------------------------
+
+pro spex::add_primary_keywords, fptr, rate_struct, sdate, version
+
+; Add keywords to the primary header
+fptr->Addpar, 'ORIGIN', rate_struct.origin, 'Origin of FITS file'
+fptr->Addpar, 'TELESCOP', rate_struct.telescope, 'Telescope or mission name'
+fptr->Addpar, 'INSTRUME', rate_struct.instrument, 'Instrument name'
+fptr->Addpar, 'OBJECT', rate_struct.object, 'Observed object'
+fptr->Addpar, 'RA', 0.0, 'Source right ascension in degrees'
+fptr->Addpar, 'DEC', 0.0, 'Source declination in degrees'
+fptr->Addpar, 'RA_NOM', 0.0, 'r.a. nominal pointing in degrees'
+fptr->Addpar, 'DEC_NOM', 0.0, 'dec. nominal pointing in degrees'
+fptr->Addpar, 'EQUINOX', rate_struct.equinox, 'Equinox of celestial coordinate system'
+fptr->Addpar, 'RADECSYS', rate_struct.radecsys, 'Coordinate frame used for equinox'
+fptr->Addpar, 'DATE-OBS', sdate[0], 'Data start time UT'
+fptr->Addpar, 'DATE-END', sdate[1], 'Data end time UT'
+fptr->Addpar, 'TIMVERSN', 'OGIP/93-003', 'OGIP memo number where the convention used'
+fptr->Addpar, 'VERSION', version, 'File format version number'
+fptr->Addpar, 'AUTHOR', rate_struct.author, 'Software that created this file'
+
+end
+
+;--------------------------------------------------------------------------
+
+pro spex::add_rate_keywords, fptr, rate_struct, sdate, timeInterval, ntimes, version
+
+; Add keywords to the primary header
+fptr->Addpar, 'FITFUNC', self->get(/spex_summ_fit_function)
+fptr->Addpar, 'GEOAREA', self->get(/spex_summ_area), 'Detector area for data in fit results (cm^2)'
+fptr->Addpar, 'DETUSED', ' '
+fptr->Addpar, 'SUMFLAG', 1, 'Spectra summed over detectors'
+fptr->Addpar, 'SUMCOINC', 0
+fptr->Addpar, 'COINCIDE', 0, 'Anti-coincident spectra'
+
+fptr->Addpar, 'BACKAPP', 'F', 'Correction applied'
+fptr->Addpar, 'DEADAPP', 'T', 'Correction applied'
+fptr->Addpar, 'VIGNAPP', 'F', 'Correction applied'
+
+fptr->Addpar, 'OBSERVER', 'unknown', 'Usually the name of the user who genrated the file'
+; Set mjdref to January 1, 1979, midnight
+;fptr->Addpar, 'MJDREF', float(rate_struct.mjdref), 'TIMESYS in MJD (d)'
+;fptr->Addpar, 'TIMESYS', rate_struct.timesys, 'Reference time in YYYY MM DD hh:mm:ss'
+
+;timezero = anytim( [timeInterval[0,0], timeInterval[1,ntimes-1]],/mjd)
+
+; Integer part of reference time minus mjdref
+;timezerf = 0.0
+
+
+;tstarti = timezero[0].mjd-rate_struct.mjdref
+;tstartf = double(timezero[0].time) /8.64d7   ; fraction of the day in seconds
+;tstopi = timezero[1].mjd-rate_struct.mjdref
+;tstopf = double(timezero[1].time) / 8.64d7   ; fraction of the day in seconds
+
+;fptr->Addpar, 'TIMEZERO', (timezero[0].mjd-rate_struct.mjdref)+timezerf, 'Start day of the first bin rel to TIMESYS'
+;fptr->Addpar, 'TSTARTI', tstarti, 'Integer portion of start time rel to TIMESYS'
+;fptr->Addpar, 'TSTARTF', tstartf, 'Fractional portion of start time'
+;fptr->Addpar, 'TSTOPI', tstopi, 'Integer portion of stop time rel to TIMESYS'
+;fptr->Addpar, 'TSTOPF', tstopf, 'Fractional portion of stop time'
+;fptr->Addpar, 'CLOCKCOR', 'T', 'Clock is corrected to UT.'
+;fptr->Addpar, 'TELAPSE', $
+;                   ((tstopi-tstarti) + (tstopf-tstartf))*86400, $
+;                                             'Elapsed time in seconds'
+fptr->Addpar, 'COMMENT', 'absTime[i] = mjd2any(MJDREF + TIMEZERO) + TIME[i]'
+
+; added to make spectral file compatible with XSPEC
+;fptr->Addpar, 'POISSERR', 'F'
+;fptr->Addpar, 'VERSION', version, 'File format version number'
+
+phafile = self->get(/spex_specfile)
+break_file, phafile, dum,dum, name, ext
+fptr->Addpar, 'PHAFILE', name+ext, 'Name of the spectrum file'
+respfile = self->get(/spex_drmfile)
+break_file, respfile, dum,dum, name, ext
+fptr->Addpar, 'RESPFILE', name+ext, 'Name of the response file'
+
+fptr->Addpar, 'TIMVERSN', 'OGIP/93-003', 'OGIP memo number where the convention used'
+fptr->Addpar, 'DATE-OBS', sdate[0], 'Data start time UT'
+fptr->Addpar, 'DATE-END', sdate[1], 'Data end time UT'
+
+; Get current time and place the 6 elements returned by bin_date in a string array
+currtime = strmid(anytim(!stime, /ccsds), 0, 19)
+fptr->Addpar, 'DATE', currtime, 'File creation date (YYYY-MM-DDThh:mm:ss UTC)'
+
+fptr->Addpar, 'TUNIT3', 's'
+fptr->Addpar, 'TUNIT4', 's'
+fptr->Addpar, 'TUNIT5', 'counts/s'
+fptr->Addpar, 'TUNIT6', 'counts/s'
+fptr->Addpar, 'TUNIT8', 'counts/(phot/cm^2/keV)'
+fptr->Addpar, 'TUNIT10', 'phot/cm^2/sec/keV'
+
+
+end
+
+;--------------------------------------------------------------------------
+
+pro spex::add_ebounds_keywords, fptr, rate_struct, sdate, version
+
+; Add keywords to the primary header
+fptr->Addpar, 'ORIGIN', rate_struct.origin, 'Origin of FITS file'
+fptr->Addpar, 'TELESCOP', rate_struct.telescope, 'Telescope or mission name'
+fptr->Addpar, 'INSTRUME', rate_struct.instrument, 'Instrument name'
+fptr->Addpar, 'DATE-OBS', sdate[0], 'Data start time UT'
+fptr->Addpar, 'DATE-END', sdate[1], 'Data end time UT'
+fptr->Addpar, 'TIMVERSN', 'OGIP/93-003', 'OGIP memo number where the convention used'
+fptr->Addpar, 'EXTNAME', 'ENEBAND', 'Extension name'
+fptr->Addpar, 'VERSION', version, 'File format version number'
+fptr->Addpar, 'TUNIT2', 'keV'
+fptr->Addpar, 'TUNIT3', 'keV'
+
+end
+;--------------------------------------------------------------------------
+
+function spex::prepare_rate_struct, ntimes, nchan
+
+; Create structure to be written to the fits file
+
+nparams = n_elements(self->get(/spex_summ_free_mask))/ntimes
+
+struct = {spec_num: 0, $
+    channel: lonarr(nchan), $
+    time: 0.0D, $
+    timedel: 0.0D, $
+    rate: fltarr(nchan), $
+    stat_err: fltarr(nchan), $
+    bk_rate: fltarr(nchan), $
+    bk_error: fltarr(nchan), $
+    chisq: 0.0, $
+    convfac: fltarr(nchan), $
+    emask: bytarr(nchan), $
+    phmodel: fltarr(nchan), $
+    residual: fltarr(nchan), $
+    filter: 0.0, $
+    fit_done: 0.0, $
+    freemask: fltarr(nparams), $
+    params: fltarr(nparams), $
+    startpar: fltarr(nparams), $
+    minima: fltarr(nparams), $
+    maxima: fltarr(nparams), $
+    sigmas: fltarr(nparams), $
+    uncert: 0.0, $
+    maxiter: 0, $
+    niter: 0, $
+    stopmsg: ' ' }
+
+
+input = ntimes GT 1L ? Replicate( struct, ntimes ) : struct
+
+input.spec_num  = input.spec_num  + indgen(ntimes) + 1
+input.channel  = input.channel + rebin(lindgen(nchan), nchan, ntimes)
+
+time_interval = self->get(/spex_summ_time_interval)
+
+; Start and stop times of packets in MJD.
+ut = anytim( time_interval, /MJD )
+
+
+; calculate the offsets since start day
+ut = (ut.mjd-ut[0,0].mjd) + ((double(ut.time)/1000.) + (ut.mjd-ut[0,0].mjd)*86400)
+
+input.time  = reform(ut[0,*])
+input.timedel  = reform(ut[1,*]-ut[0,*])
+
+input.rate  = self->get(/spex_summ_ct_rate)
+input.stat_err  = self->get(/spex_summ_ct_error)
+;input.bk_rate  = self->get(/spex_summ_bk_rate)
+;input.bk_error  = self->get(/spex_summ_bk_error)
+input.chisq  = self->get(/spex_summ_chisq)
+
+input.convfac  = self->get(/spex_summ_conv)
+input.emask  = self->get(/spex_summ_emask)
+input.phmodel  = self->get(/spex_summ_ph_model)
+input.residual = self->get(/spex_summ_resid)
+input.filter = self->get(/spex_summ_filter)
+input.fit_done = self->get(/spex_summ_fit_done)
+input.freemask = self->get(/spex_summ_free_mask)
+input.params = self->get(/spex_summ_params)
+input.startpar = self->get(/spex_summ_starting_params)
+input.minima = self->get(/spex_summ_minima)
+input.maxima = self->get(/spex_summ_maxima)
+input.sigmas = self->get(/spex_summ_sigmas)
+input.uncert = self->get(/spex_summ_uncert)
+input.maxiter = self->get(/spex_summ_maxiter)
+input.niter = self->get(/spex_summ_niter)
+input.stopmsg = self->get(/spex_summ_stop_msg)
+
+return, input
+
+end
+;--------------------------------------------------------------------------
+
+function spex::prepare_ebounds_struct, nchan
+
+
+
+
+
+struct = add_tag(struct, 0L, 'CHANNEL')
+struct = add_tag(struct, 0.0, 'E_MIN')
+struct = add_tag(struct, 0.0, 'E_MAX')
+
+input = nchan GT 1L ? Replicate( struct, nchan ) : struct
+
+input.( 0L ) = input.( 0L ) + indgen(nchan)
+
+energy = self->get(/spex_summ_energy)
+input.( 1L )  = input.( 1L )  + energy[0,*]
+input.( 2L )  = input.( 2L ) + energy[1,*]
+
+
+return, input
+
+end
+
+;--------------------------------------------------------------------------
+
+pro spex::restorefit, file=file
+
+if size(file, /tname) ne 'STRING' then begin
+    file = dialog_pickfile (path=curdir(), filter=['*.fits','*.geny'], $
+       file=file, $
+       title = 'Select geny or FITS file to restore fit results from',  $
+       group=group, $
+       get_path=path)
+endif
+
+if file ne '' then begin
+    fit_results = spex_read_fit_results(file)
+    if size(/tname, fit_results) ne 'STRUCT' then begin
+        message, 'Aborting restorefit.', /cont
+        return
+    endif
+
+    ;initialize all spex_summ params to nothing (in case structure from file doesn't have all tags)
+    self -> clearsumm
+
+    ; set structure from file into spex_summ parameters
+    self -> set, _extra = fit_results
+
+    msg = 'Fit results restored from ' + file + ' and set into spex_summ... params in ospex object.'
+    if spex_get_nointeractive() then print,msg else a=dialog_message(msg)
+endif else print,'No input file selected.  No fit results restored.'
+
+end
+
+;--------------------------------------------------------------------------
+
+pro spex::clearall
+
+param_names = self -> get_script_params(error=error)
+if error then return
+
+temp_obj = ospex(/no_gui)
+def_params = temp_obj -> get()
+obj_destroy, temp_obj
+
+
+clear_params = str_subset(def_params, param_names)
+nointer = spex_get_nointeractive()
+setenv,'OSPEX_NOINTERACTIVE=1'
+self -> set, _extra=clear_params
+setenv,'OSPEX_NOINTERACTIVE=' + trim(nointer)
+
+self -> clearsumm
+
+print,'All clear.'
+end
+
+;--------------------------------------------------------------------------
+
+pro spex::clearsumm
+summ = self -> get(/spex_summ)
+null_summ = {spex_fit_info}
+self -> set, _extra = str_subset(null_summ, tag_names(summ))
+end
+
+;--------------------------------------------------------------------------
+
+pro spex__define
+
+dummy = {spex, $
+    inherits spex_gen }
+end
+
+;--------------------------------------------------------------------------

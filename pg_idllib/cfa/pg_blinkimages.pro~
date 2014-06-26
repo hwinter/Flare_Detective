@@ -1,0 +1,234 @@
+;+
+; NAME:
+;
+;  pg_blinkimages
+;
+; PURPOSE:
+;
+; widget interface for blinking two images
+;
+; CATEGORY:
+;
+; graphic utils
+;
+; CALLING SEQUENCE:
+; 
+; pg_blinkimages,im1,im2,blinktime=blinktime
+;
+; INPUTS:
+;
+;
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+; loadct,5 & pg_blinkimages,dist(512,512),dist(510,510)
+;
+; AUTHOR: 
+;  Paolo Grigis, SAO, pgrigis@cfa.harvard.edu
+;
+; MODIFICATION HISTORY:
+;
+;-
+
+PRO pg_blinkimages_plotim,infost,drawwidgetid
+
+  ;widget_control,drawwidgetid,get_value=winmap
+  ;wset,winmap
+
+  IF infost.imshown EQ 1 THEN BEGIN 
+     tvscl,infost.im1
+  ENDIF ELSE BEGIN
+     tvscl,infost.im2
+  ENDELSE
+
+END
+
+
+PRO pg_blinkimages_event,ev
+
+;  print,tag_names(ev, /structure_name)
+;  print,ev.id
+
+
+;  widget_control, ev.id, get_uvalue=uval 
+ 
+  IF (tag_names(ev, /structure_name) EQ 'WIDGET_TIMER') THEN BEGIN
+     print,'Timer went off!'
+     root=widget_info(ev.top,find_by_uname='root')
+     drawwidget=widget_info(root,find_by_uname='commands')
+     widget_control,root,get_uvalue=infost
+     infost.imshown=3-infost.imshown
+     widget_control,root,set_uvalue=infost
+
+     print,infost.cont
+
+     IF (infost.cont EQ 1) THEN BEGIN 
+        pg_blinkimages_plotim,infost,drawwidget
+        widget_control,ev.top,timer=infost.blinktime
+     ENDIF
+
+  ENDIF ELSE BEGIN 
+
+     root=widget_info(ev.top,find_by_uname='root')
+     widget_control,root,get_uvalue=infost
+;     print,infost.cont
+
+  
+  CASE ev.ID OF 
+
+     widget_info(ev.top,find_by_uname='commands') : BEGIN
+
+        CASE ev.value OF
+           
+           0 : BEGIN            ;start blinking
+              
+              ;print,'start'
+              infost.cont=1
+              widget_control,ev.top,timer=0
+              widget_control,root,set_uvalue=infost
+              
+
+           END
+
+           1: BEGIN ;stop blinking
+
+              ;print,'stop'
+              
+              infost.cont=0
+              widget_control,root,set_uvalue=infost
+ 
+           END
+
+           2: BEGIN ;Image 1
+
+
+              drawwidget=widget_info(root,find_by_uname='commands')
+              infost.imshown=1
+              pg_blinkimages_plotim,infost,drawwidget
+              widget_control,root,set_uvalue=infost
+
+;              widget_control,root,set_uvalue=infost
+ 
+           END
+
+           3: BEGIN ;Image 2
+
+              drawwidget=widget_info(root,find_by_uname='commands')
+              infost.imshown=2
+              pg_blinkimages_plotim,infost,drawwidget
+              widget_control,root,set_uvalue=infost
+
+           END
+
+
+           4: BEGIN ;exit
+
+              print,'Now exiting...'
+              widget_control,ev.top,/destroy
+              
+           END
+
+           ELSE : BEGIN 
+
+              print,'Warning! There is an error in the program! Fix the bug!'
+              
+           ENDELSE
+
+
+        ENDCASE
+
+
+     END
+     
+  ENDCASE
+
+ENDELSE
+
+
+END
+
+PRO pg_blinkimages,im1,im2,blinktime=blinktime
+
+  blinktime=fcheck(blinktime,0.3)
+
+  s1=size(im1)
+  s2=size(im2)
+
+  IF (s1[0] NE 2) OR (s2[0] NE 2) THEN BEGIN 
+     print,'Invalid input! Need two 2-dimensional arrays'
+     ;stop
+     RETURN
+  ENDIF
+
+  ;image size
+  nx=max([s1[1],s2[1]])
+  ny=max([s1[2],s2[2]])
+
+  infost={im1:im1,im2:im2,blinktime:blinktime,imshown:1,cont:1}
+
+
+;  widget hierarchy creation
+;
+  base=widget_base(title="Paolo Grigis' Image Blinker",/row)
+  root=widget_base(base,/row,uvalue=mapstr,uname='root')
+    
+  menu1=widget_base(root,group_leader=root,/column,/frame)
+  drawsurf1=widget_base(root,group_leader=root,/row)
+  buttonm1=widget_base(menu1,group_leader=menu1,/row,/frame)
+;end widget hierarchy creation buttons
+
+;
+    values=['Start','Stop','Image 1','Image 2','Exit']
+    uname='commands'
+    bgroup=cw_bgroup(buttonm1,values,/column,uname=uname) ;,/frame)
+;end buttons
+
+;draw widget
+;
+    draw=widget_draw(drawsurf1,xsize=nx,ysize=ny,uname='drawwin')
+;
+
+    widget_control,root,set_uvalue=infost
+    widget_control,base,/realize 
+    ;widget_control,base,timer=2
+
+    pg_blinkimages_plotim,infost,draw
+
+    xmanager,'pg_blinkimages',base,/no_block
+
+END
+
+
+

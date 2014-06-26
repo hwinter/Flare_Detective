@@ -1,0 +1,311 @@
+=========================================================================
+most frequently used:
+
+.r yodat
+
+SXT:
+stepper,index,data,xs=512,ys=512
+SXT_PREP,index,data,pindex,pdata,unc,sat,/register,/norm,/roll
+xy = gt_center(index(29),/hxt)	
+
+HXT:
+HXT_4CHPLOT,index,data
+hxt_multimg,index,data,hi0,hd0,xy=xy,channel=0
+
+TRACE:
+IDL> read_trace,files,-1,index          ; get all the index structures
+IDL> ss = trace_sswhere(index)          ; select wavalength, etc. of choice
+IDL> read_trace,files,ss,index,data     ; read in the desired data
+scldata=trace_scale(index,data,/despike,/byte)	; /byte is good if short on memory!
+xstepper, scldata, get_infox(index,'naxis1,wave_len,',/fmt_tim)
+trace_prep,index,data,outindex,outdata,/wave2point,/unspike,/destreak,/deripple	;,/normalize
+
+EIT:
+eit_prep, file, hdrs, datacube, /no_cal, /save_zero
+tvscl, alog10(img>0.5)
+plot_image, alog10(img>0.5)
+wave = eit_fxpar(hdr, 'WAVELNTH')
+eit_colors, wave
+xy = eit_point('2002/02/20 09:57:00', wavelength)
+	+there's an eit object...
+fits2map,files,maps
+=========================================================================
+
+
+
+*************************************************************************
+*************************************************************************
+*************************************************************************
+
+tar xomzvf yoh990611.tar
+
+*************************************************************************
+IDL>setenv,'$DIR_GEN_FEM=/tmp_mnt/global/helene/local/sdb/ydb/fem'
+
+
+IDL>ang = gt_center('18-APR-1997',/ang) 
+
+*************************************************************************
+to make HXT light curves:
+-------------------------
+
+IDL> hinfil='YOHKOH/1999_06_11/hda990611.1036'
+;hinfil='/global/lepus/usr/users/shilaire/YOHKOH/2000_08_25/hda000825.1344'
+IDL> rd_xda,hinfil,-1,hindex,hdata
+IDL> HXT_4CHPLOT,hindex,hdata
+
+OR using yodat:
+
+IDL>.r yodat 			// use option '0'
+IDL>HXT_4CHPLOT,index,data
+*************************************************************************
+HXT imagery:
+--know hxt coords!
+hxt_multimg,hindex,hdata,hiout,hdout,chan=0
+hxt_multimg,index,data,hi0,hd0,xy=xy,channel=0
+stepper,sindex(11),sdata(*,*,11),xs=512
+ocontour,dout,bin=8
+xyouts,10,40,/dev,charsi=1.5,'HXT contour 13:23:19 LOW'
+write_gif,'YOHKOH/1999_07_25/image_1322.gif',tvrd()
+*************************************************************************
+
+to get the time of a HXT or SXT index:
+
+print,fmt_tim(hindex(0))
+print,fmt_tim(sindex(11))
+*************************************************************************
+to get GOES8 xray data and SAA/night:
+
+setenv,'$DIR_GEN_G81=/tmp_mnt/global/helene/local/sdb/ydb/g81' 
+plot_goes,'28-aug-99 12:00','28-aug-99 15:00',/fillnight,/fillsaa
+evt_grid,sindex
+evt_grid,hindex
+
+pr_gev,'25-jul-99
+
+for BATSE : 
+plot_gbl,'08-sep-99 12:00','08-sep-99 12:30'
+*************************************************************************
+to get angle from sun center/HXT/heliocentric/pixel coord for SXT image:
+
+xy = gt_center(index(29)) 		// in pixel number from sun center
+xy = gt_center(index(29),/ang) 		// in arcsec from sun center
+xy = gt_center(index(29),/hxt)		// in hxt chuere coord. 
+xy = gt_center(index(29),/helio)	// in heliocentric coord.
+*************************************************************************
+
+utplot_io,time,cts(0,*,*),index(0),yr=[1,1e4] &$
+outplot,time,cts(1,*,*) & outplot,time,cts(2,*,*) & outplot,time,cts(3,*,*)
+
+
+
+********************************************************************************
+*******************  USEFUL gt_xxx or get_xxx   ********************************
+********************************************************************************
+gt_center(index(166))
+gt_corner(index(166))
+gt_expdur(index(166))	in ms
+gt_dpe(index(166))	
+gt_dp_rate(index(166)), gt_dp_rate()
+gt_dp_mode(index(166)), gt_dp_mode()
+gt_comp(index(166)), gt_comp()
+
+gt_pix_size(index(0))		// in arcseconds...
+
+gt_temp_ccd(index(166))
+gt_pfi_ffi(index(166))
+sxt_cen(index(166))	returns center of SXT image from
+			sun center in pixel coordinates.
+help,gt_filtA()
+gt_filtA(index(166)) 
+help,gt_filtB()
+gt_filtB(index(166))
+
+plot_evn,'25-jul-99 10:00','25-jul-99 16:00'
+
+---
+
+hxt_pos = get_hxt_pos('20-dec-92 3:32', helio='N32W23')
+---
+FROM ANALYSIS GUIDE
+
+step I: prepare data
+
+IDL>SXT_PREP,index,data,new_index,new_data,unc,sat,/register,/norm,/roll	[,ref_image=index(0)]
+
+step II: filter selection
+
+IDL> i1=where(G06-nov-00 10:00T_FILTB(new_index) eq 2)  for Al.1 filter
+or , for example, : i1=where(GT_EXPDUR(index) GT 1000)
+
+IDL> data1=new_data(*,*,i1)
+IDL> index1=new_index(i1)
+IDL> sat1=sat(*,*,i1)
+IDL> unc1=unc(i1)
+
+step III : interpolation (if needed)
+
+IDL> SXT_INTERP,index1,daTA1,NTIME,UNC1,SAT1
+
+----
+
+data2=data1 * (data1 LT 200)
+datadiff=data(*,*,1:36)-data(*,*,0:35)
+
+----
+sxt_teem
+go_teem 
+tv_teem
+sxt_flux
+sxt_erg_per_dn
+sxt_dn2ph 
+
+
+
+**************************
+mreadfits, files, index, data
+align_cube_correl, data,  outdata [,reference=NN]      ;  CC alignment
+
+***************************
+p = hxt_powerlaw(index,data,1,bkgd,time=time) 
+t = hxt_thermal(index,data,0,bkgd,time=time) 
+
+****************************
+xyouts,10,10,/dev,charsi=1.5,'SXT 13:22:14; contour HXT 13:23:19 LOW'
+****************************
+trace_prep,index,data,outindex,outdata,/wave2point,/unspike,/destreak,/deripple,/normalize
+
+expdur=gt_tagval(index3,/sht_mdur)
+****************************
+spawn,'ang2solrad 950 950',res
+print,res
+****************************
+str=ANYTIM('12-aug-99 12:00:01.123',/utc_ext)		;  the best !!!
+str=anytim('12-aug-99 12:00:01.123',/utc_int)		;	the best !!!
+
+anytim2cal(almost_any_time_string_format,form=11,/MSEC)
+		; canNOT add /TIME or /DATE keyword to get only that...(BUG!)
+str2utc
+ anytim2utc TAI2UTC UTC2DOY UTC2INT UTC2STR UTC2TAI TIME_IND_NRH		
+ anytim2ints
+ms2hms
+map_time=strsplit(map(i).time,/tail)
+****************************
+oplot,[-400],[250],color=134,psym=7	: overplot with symbol ...
+****************************
+data(WHERE(data lt 0))=-1	: to put -1 wherever a value in the data array is below 0
+****************************
+window,0,colors=255,xsize=512,ysize=512
+****************************
+print,strmid(str,3,1)	: to print character #3
+****************************
+mreadfits,'filename.fits',index,data,header=header
+****************************
+hprint, headfits('fitsfile' [,ext=#])
+****************************
+print,55,format='("result = ",I5," blabla")'
+****************************
+time2file
+****************************
+map2gif		: to make .gif files out of a map array
+****************************
+astrolib	: to set some non-standard ASTROLIB environmental variables
+fits_info,'HESSI/fits/test1.fits',textout=1	: to get info on a fits !
+****************************
+data=readfits('/global/helene/users/shilaire/HESSI/test_data/hsi_20000831_0128_000.fits',header,exten_no=1) ;,heap)
+	; readfits() is also very powerful to view certain portions of a binary table...
+
+data=mrdfits(filename,extensionnbr,head)
+	: this at least gives kind of a structured array...
+**********************************
+mwrfits,mystruct,'TEMP/filedb.fits'
+**********************************
+CROSS CORRELATIONS:
+print,max(c_correlate(sfuimg(*,66),sfuimg(*,109),indgen(1000)),ss)
+print,ss
+OR also : print,max(c_correlate(sfuimg(*,66),sfuimg(*,109),indgen(1000)-500),ss)
+**********************************
+TRACE:
+
+IDL> read_trace,files,-1,index          ; get all the index structures
+IDL> ss = trace_sswhere(index)          ; select wavalength, etc. of choice
+IDL> read_trace,files,ss,index,data     ; read in the desired data
+sdata=trace_scale(index,data,/despike,/byte)	; /byte is good if short on memory!
+xstepper, sdata, get_infox(index,'naxis1,wave_len,',/fmt_tim)
+
+trace_prep,index,data,outindex,outdata,/wave2point,/unspike,/destreak,/deripple
+**********************************
+IDL> ssw_path,/iii [,/remove]           ; add and remove SSW instrument = iii
+IDL> pr_env,/xxx                        ; show environmentals/logicals xxx
+IDL> sswloc,/xxx [,outlist]             ; SSW routines matching pattern xxx
+IDL> stuff=gt_tagval(xxx,/TAG)          ; extract TAG from structure array xxx
+IDL> text=get_infox(xxx,'t1,t2,t3...')  ; ascii summary of structure array xxx
+**********************************
+
+
+**********************************
+;to get solar radius (and other useful stuff...) at any period of the year.
+PRINT,get_rb0p('2002/07/04',/radius)
+**********************************
+**********************************
+GOES:
+; GOES-8 3s data integrated to bs*10 secs for whole flare
+
+ydb_install		; 3 second data
+
+rd_goes,goes_times,goes_data,trange='2002/02/26 '+['10:25:00','10:35:00']
+bs=1	;boxsize (1 means no averaging...)
+n_init=N_ELEMENTS(goes_times)
+n=LONG(n_init)/LONG(bs)
+
+lo=FLTARR(n)
+hi=lo
+times=REPLICATE({MJD:0L,TIME:0L},n)
+
+;WITHOUT background subtraction
+;FOR i=0,n-1 DO BEGIN
+;	lo[i]=TOTAL(goes_data[bs*i:bs*i+bs-1,0])/bs
+;	hi[i]=TOTAL(goes_data[bs*i:bs*i+bs-1,1])/bs
+;	times[i]=goes_times[bs*i+bs/2]
+;ENDFOR
+
+;WITH background subtraction (taking the first data point as the background...)
+FOR i=0,n-1 DO BEGIN							&$
+	lo[i]=TOTAL(goes_data[bs*i:bs*i+bs-1,0]-goes_data[0,0])/bs	&$
+	hi[i]=TOTAL(goes_data[bs*i:bs*i+bs-1,1]-goes_data[0,1])/bs	&$
+	times[i]=goes_times[bs*i+bs/2]					&$
+ENDFOR
+
+goes_tem,lo,hi,g_t,g_em,/GOES8
+
+
+!P.MULTI=[0,1,2]
+utplot,times,lo,/YLOG,yrange=[1e-10,1e-2]
+outplot,times,hi
+
+utplot,times,g_t,/YLOG,yrange=[0.1,100]			;in MK units
+outplot,times,g_em,linestyle=1				;in 10^49 cm-3 units
+!P.MULTI=0
+**********************************
+**********************************
+showfont,4,"symbol"		 
+XYOUTS,10,10,/DEV,'!7q'
+**********************************
+;double axes:
+EkeV=0.5+FINDGEN(100)
+Eang=12.42/EkeV
+data=FINDGEN(100)
+
+PLOT,EkeV,data,xstyle=9,xtit='[keV]',Position=[0.1, 0.1, 0.9, 0.85],XRange=[1,100], Charsize=1.25
+Axis, XAxis=1.0, XTitle='Wave Number (' + String(197B) + ')', XRange=[1,100], XStyle=1, Charsize=1.25, XTickFormat='ticks_kev2angstrom'
+
+PLOT,atm.Emin,atm.h/1000.,/XLOG,xr=[0.1,10000],xtit='Initial electron energy [keV]',ytit='Height above photosphere reached [Mm]',xmar=[10,10],ystyle=8
+AXIS,/YAXIS,YTICKNAME=REPLICATE('aaa',10)
+*********************************
+=============================================================================================		 
+
+
+
+
+
+

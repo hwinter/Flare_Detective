@@ -1,0 +1,55 @@
+;+
+; NAME:
+;      pg_hubapsi
+;
+; PROJECT:
+;      numerical function evaluation
+;
+; PURPOSE: 
+;      returns the value of the PSI function as used in HUBA NRL
+;      plasma formulary
+;
+; EXPLICATION:
+;      PSI is defined by Huba as follows:  
+;      
+;      psi(x)=2/sqrt(Pi)*int_0^x (sqrt(t)*exp(-t) dt)
+;
+;      which can be transformed into
+;
+;      psi(x)=erf(sqrt(x))-2/sqrt(Pi)*sqrt(x)*exp(-x)
+;
+;
+; CALLING SEQUENCE:
+;      y=pg_hubapsi(x)
+;
+; INPUTS:
+;      x: an array of arguments (should be 0 or positive for
+;         meaningful output)
+;   
+; OUTPUTS:
+;      y: an array of values
+;      
+; KEYWORDS:
+;
+;
+; HISTORY:
+;       04-MAY-2005 written PG
+;       04-OCT-2005 changed to make use of igamma function,
+;                   more precise, also because of cancellations
+;                   at x near 0, where psi is approximately
+;                   given by const*sqrt(x)*(1-exp(-x)), and the
+;                   last term is very unaccurate for small x!
+;
+; AUTHOR
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;
+;-
+
+FUNCTION pg_hubapsi,x
+
+;y=erf(sqrt(x))-2./sqrt(!Pi)*sqrt(x)*exp(-x)
+y=igamma(1.5d,x)
+
+RETURN,y
+
+END

@@ -1,0 +1,171 @@
+;+
+; NAME:
+;
+; pg_plot_spfitres
+;
+; PURPOSE:
+;
+; plot a spectral fit
+;
+; CATEGORY:
+;
+; rhessi spectrograms/fitting util
+;
+; CALLING SEQUENCE:
+;
+; 
+;
+; INPUTS:
+;
+; 
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+; 
+;
+; OUTPUTS:
+;
+; 
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; AUTHOR:
+; Paolo Grigis, Institute for Astronomy, ETH Zurich
+; pgrigis@astro.phys.ethz.ch 
+;
+; MODIFICATION HISTORY:
+;
+; 20-NOV-2006 pg written
+; 24-NOV-2006 added /new keyword to account for new format of tis results
+; 15-JAN-2007 added resystyle,resytitle, overplot keywords
+;
+; this only used for producing a spectrum for publication
+; setup to optimize some fine point of EPS plotting
+;-
+
+;.comp pg_plot_spfitres_special
+
+PRO pg_plot_spfitres_special,fitres,intv=intv,position=position,xtickname=newxtickname $
+                    ,xtickv=xtickv,xticks=xticks,modcolor=modcolor,bcolor=bcolor,residuals=residuals $
+                    ,xrange=xrange,title=title,resrange=resrange,_extra=_extra $
+                    ,new=new,resystyle=resystyle,resytitle=resytitle,overplot=overplot $
+                    ,resyticks=resyticks,resytickv=resytickv,resytickname=resytickname $
+                    ,resthick=resthick,xtitle=xtitle,datalast=datalast,resxticklen=resxticklen $
+                    ,modcontline=modcontline,modthick=modthick,thick=thick
+
+intv=fcheck(intv,0)
+
+;modcolor=fcheck(modcolor,[12,7,2])
+bcolor=30;10
+termcol=39;7
+nontcol=77;2
+
+;modcolor=fcheck(modcolor,[12,termcol,nontcol])
+modcolor=[12,termcol,nontcol]
+;bcolor=fcheck(bcolor,10)
+resrange=fcheck(resrange,[-4,4])
+
+IF NOT exist(position) THEN spposition=[0.1,0.1,0.95,0.95] ELSE spposition=position
+
+IF keyword_set(residuals) THEN BEGIN
+
+   dypos=spposition[3]-spposition[1]
+
+   xtickname=replicate(' ',30)
+
+   resposition=[spposition[0],spposition[1],spposition[2],spposition[1]+dypos/4.]
+   spposition=[spposition[0],spposition[1]+dypos/4.,spposition[2],spposition[3]]
+
+   newxtitle=' '
+
+ENDIF ELSE BEGIN 
+   newxtitle=xtitle
+   xtickname=newxtickname
+ENDELSE
+
+
+
+
+cntedges=fitres.cntedges
+spectrum=fitres.cntspectra[*,intv]
+espectrum=fitres.cntespectra[*,intv]
+resulttot=fitres.cntmodels[*,intv]
+
+IF keyword_set(new) THEN BEGIN 
+   resultpart=fitres.cntpart[*,*,intv]
+ENDIF ELSE BEGIN 
+   resulttherm=fitres.cnttherm[*,intv]
+   resultnont=fitres.cntnontherm[*,intv]
+ENDELSE
+
+bspectrum=fitres.bspectrum*fitres.fitpar[5,intv]
+bespectrum=fitres.bespectrum*fitres.fitpar[5,intv]
+
+noerase=keyword_set(overplot)
+pg_plotsp,cntedges,spectrum,espectrum=espectrum,/nodata $
+         ,position=spposition ,xrange=xrange,xtickname=xtickname $
+         ,_extra=_extra,title=title,noerase=noerase,xtitle=newxtitle
+
+
+;pg_plotsp,cntedges,resulttot,color=modcolor[0],/overplot
+
+IF keyword_set(new) THEN BEGIN 
+
+   IF NOT keyword_set(modcontline) THEN BEGIN 
+      FOR ipart=0,n_elements(resultpart[0,*])-1 DO $
+         pg_plotsp,cntedges,resultpart[*,ipart],color=modcolor[1+ipart],/overplot,thick=modthick
+   ENDIF ELSE BEGIN
+      FOR ipart=0,n_elements(resultpart[0,*])-1 DO $
+         pg_plotsp,cntedges,resultpart[*,ipart],color=modcolor[1+ipart],/overplot,/continuous,thick=modthick    
+   ENDELSE
+
+
+ENDIF ELSE BEGIN 
+   pg_plotsp,cntedges,resulttherm,color=modcolor[1],/overplot 
+   pg_plotsp,cntedges,resultnont,color=modcolor[2],/overplot 
+ENDELSE
+
+
+pg_plotsp,cntedges,bspectrum,espectrum=bespectrum,color=bcolor,/overplot,thick=thick
+
+IF keyword_set(datalast) THEN pg_plotsp,cntedges,spectrum,espectrum=espectrum,/overplot,thick=thick
+
+;plot residuals
+IF keyword_set(residuals) THEN BEGIN
+   ystyle=keyword_set(resystyle)
+   pg_plotspres,cntedges,spectrum=spectrum,modspectrum=resulttot,espectrum=espectrum $
+               ,xrange=xrange,/xlog,/xstyle,yrange=resrange,/noerase,position=resposition $
+               ,ystyle=ystyle,ytitle=resytitle,xtickv=xtickv,xticks=xticks,xtickname=newxtickname $
+               ,yticks=resyticks,ytickv=resytickv,ytickname=resytickname,thick=resthick,xtitle=xtitle $
+               ,xticklen=resxticklen
+
+ENDIF
+
+
+END

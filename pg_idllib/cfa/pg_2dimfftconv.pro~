@@ -1,0 +1,120 @@
+;+
+; NAME:
+; 
+;   pg_2dimfftconv
+;
+; PURPOSE:
+;
+;   computes the two dimensional convolution of two matrices a and b.
+;   (of any size)
+;
+; CATEGORY:
+;
+;   image proceesing
+;
+; CALLING SEQUENCE:
+;
+;   corrmat=pg_2dimfftconv(a,b)
+;
+; INPUTS:
+; 
+;   a,b: the two matrices to convolve
+; 
+; OPTIONAL INPUTS:
+;
+;   None
+;
+; KEYWORD PARAMETERS:
+;
+;   None
+; 
+; OUTPUTS:
+;
+;   corrmat: the correlation matrix. 
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;   Use the FFT <-> cross-correlation & convolution theorems. 
+;   FFT(cross_correlation(a,b))=complex_conj(FFT(a))*FFT(b)
+;   FFT(convolution(a,b))      =             FFT(a) *FFT(b)
+;   See also Fourier Analysis and Imaging, R. N. Bracewell, Kluwer 2003
+;
+; EXAMPLE:
+;
+; a=[[1,2,3],[4,5,6]]
+; b=[[1,0,0],[1,1,1],[2,1,1]]  
+; 
+; AUTHOR:
+; 
+;  Paolo Grigis, pgrigis@cfa.harvard.edu
+;
+; MODIFICATION HISTORY:
+;
+;  26-MAR-2008 written PG
+;  31-MAR-2008 improved documentation and fixed behaviour for constant arrays input
+;  17-APR-2008 corrected
+;-
+
+FUNCTION pg_2dimfftconv,a,b,aa=aa,bb=bb,noabs=noabs
+
+s1=size(a)
+s2=size(b)
+
+IF (s1[0] EQ 0 OR s1[0] GT 2) OR ( s2[0] EQ 0 OR s2[0] GT 2) THEN BEGIN    
+   print,'Invalid input.Please input two 1 or 2-dimensional arrays.'
+   return,-1
+ENDIF
+
+IF s1[0] EQ 0 AND s2[0] EQ 0 THEN BEGIN    
+   print,'Invalid input. At least one array must be two dimensional.'
+   return,-1
+ENDIF
+
+
+IF s1[0] EQ 1 THEN BEGIN 
+   nx1=s1[1]
+   nx2=1
+ENDIF $ 
+ELSE BEGIN 
+   nx1=s1[1]
+   ny1=s1[2]
+ENDELSE
+
+IF s2[0] EQ 1 THEN BEGIN 
+   nx2=s2[1]
+   ny2=1
+ENDIF ELSE BEGIN
+   nx2=s2[1]
+   ny2=s2[2]
+ENDELSE
+
+aa=fltarr(nx1+nx2-1,ny1+ny2-1)
+bb=fltarr(nx1+nx2-1,ny1+ny2-1)
+aa[0,0]=a
+bb[nx1-1,ny1-1]=b
+
+IF keyword_set(noabs) THEN RETURN,shift(fft(fft(aa,-1)*fft(bb,-1),1)*n_elements(aa),nx2,ny2) $
+ELSE RETURN,double(shift(fft(fft(aa,-1)*fft(bb,-1),1)*n_elements(aa),nx2,ny2))
+
+END
+
+
+
+
+

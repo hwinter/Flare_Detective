@@ -1,0 +1,387 @@
+#!/bin/ksh
+
+##################
+#    Defaults    #
+##################
+
+
+PAGER_local=less
+
+integer numFailed=0
+integer numPassed=0
+Diff="/usr/bin/diff"
+OutputDir=/tmp/${LOGNAME}.sdo_test
+RegDir=${PWD}
+RegBaseDir=${PWD}/../baseline
+TimeTest=0
+
+# Library locations when using one of the Chandra team member systems
+#export SSW_ONTOLOGY_DATA=/proj/tlmtest2/sdo/ssw/vobs/ontology/data/
+#export IDL_PATH=+/proj/tlmtest2/sdo/ssw:+/usr/local/rsi/user_contrib/astron_Jun08/:+/usr/local/rsi/idl/:+${PWD}/../..
+#export TraceLev1Dir=/proj/tlmtest2/sdo/trace
+#export NonTraceDir=/data/alisdair/AIA_FITS_FILES
+#export VOEventSpecFile=/proj/tlmtest2/sdo/ssw/vobs/ontology/data/VOEvent_Spec.txt
+
+# Library locations when on the cluster (e.g., sdo1)
+export PATH=${PATH}:/Applications/itt/idl/bin
+export SSW_ONTOLOGY_DATA=/proj/DataCenter/ssw/vobs/ontology/data
+export IDL_PATH=+/proj/DataCenter/ssw/gen:+/proj/DataCenter/ssw/offline:+/proj/DataCenter/ssw/packages:+/proj/DataCenter/ssw/site:+/proj/DataCenter/ssw/stereo:+/proj/DataCenter/ssw/vobs:+/Applications/itt/idl/lib:+${PWD}/../..
+export TraceLev1Dir='/Network/Servers/sdo1.cfa.harvard.edu/Users/Shared/ard/FFT/flare_module/ard_working/files'
+export NonTraceDir=/sdo/scratch/AIA_FITS_FILES
+export VOEventSpecFile=/proj/DataCenter/ssw/vobs/ontology/data/VOEvent_Spec.txt
+
+##############
+# Functions  #
+##############
+
+Instruct()
+{
+   print "\ntestui - UI Regression Test Script\n"
+   print -n "Note: Your CXCDS environment must be set up before running "
+   print    "chips2_test"
+   print  "Usage:  chips2_test [-acdehlqsvx]\n"
+   print "\t-c list =  Run the specified tests; use quotes when listing"
+   print "\t           multiple tests (-c "1 2"); Or flare "
+   print "\t           to run tests for a specific application (-c flare)"
+   print "\t-d DIR  =  use DIR as the base directory for regression tests"
+   print "\t-h      =  This help message"
+   print "\t-l      =  List the available test cases"
+   print "\t-o DIR  =  use DIR as the output directory"
+   print "\t-t      =  run time test. no comparison is done this purely tests"
+   print "\t           the time of a given regression test"
+   print "\t-w      =  use -w option when diff'ing files (ignore spaces)"
+   print  ""
+   print  "The default is to run ALL tests cases.\n"
+   exit 1
+}
+
+DefineTestSets()
+{
+
+   ### FLARE DETECT
+   TestsForFlare="1 2 3"
+   TestCase[1]="trace_AIA171 sdcfd_regtest_script"
+   TestCaseInput[1]="${TraceLev1Dir}/*"
+   TestCase[2]="flare_AIA171 sdcfd_regtest_script"
+   TestCaseInput[2]="${NonTraceDir}/*_171_*"
+   TestCaseCmdOptions[2]="-resetAfterInterval 20000L"
+   TestCase[3]="flare_AIA195 sdcfd_regtest_script"
+   TestCaseInput[3]="${NonTraceDir}/*_195_*"
+   TestCaseCmdOptions[3]="-resetAfterInterval 20000L"
+
+   TestGroups="flare"
+
+}
+
+
+DefineTests()
+{
+   DefineTestSets
+
+   let i=${#TestCase[*]}
+   while [ $i -gt 0 ] ; do
+      AllTestCases="$i $AllTestCases"
+      TestName[$i]=`echo ${TestCase[$i]} | cut -d' ' -f1`
+      let i=i-1
+   done
+
+   # handle requests to run specific subsets 
+   case $RunSubset in
+      flare)    TestCasesToRun=$TestsForFlare;; 
+      *) if [ "$TestCasesToRun" = "" ] ; then
+            TestCasesToRun=$AllTestCases
+         fi
+   esac
+
+}
+
+Initialize()
+{
+  
+   DefineTests
+
+   # Initialize test result array
+   for i in $AllTestCases ; do
+      TestResult[$i]="-1"
+   done
+
+   if [[ ! -d ${OutputDir} ]] ; then
+      mkdir -p ${OutputDir}
+   else
+      # dir exists, and there might be stuff in it.
+      \cd ${OutputDir}
+      if [[ $? -ne 0 ]] ; then
+         print -u2 "Error:  couldn't cd into ${OutputDir} to clean up."
+      else
+         for dir in $TestGroups ; do
+            if [[ -d $dir ]] ; then
+               \rm -rf $dir/*
+               \rmdir $dir
+            fi
+         done
+         \rm -f *
+      fi
+   fi
+
+   \cd ${RegDir}
+
+   echo ""
+   print "Test Scripts:\t\t${RegDir}"
+   print "Output Path:\t\t${OutputDir}" 
+  
+   echo ""
+ 
+   SplitTestCases
+
+   if [[ "$FlareTestToRun" != "" ]] ; then
+      mkdir -p ${OutputDir}/flare
+   fi
+
+}
+
+SummarizeResults()
+{
+   print "\n=================================================================="
+   print "\t\t\t TEST RESULTS SUMMARY"
+   print "==================================================================\n"
+
+
+   if [[ numFailed -gt 0 ]] ; then
+      print "${numPassed} TESTS PASSED, ${numFailed} TEST(S) FAILED\n"
+      print "THE FOLLOWING DENOTE FAILED TESTS:\n"
+      integer i=numFailed
+
+      while [[ i -gt 0 ]] ; do
+         print "diff ${failedTests[$i]} ${baseLines[$i]}"
+	 i=i-1
+      done
+   else
+      print "No problems detected ... all ${numPassed} test(s) passed!!"
+   fi
+   print ""
+}
+
+Finish()
+{
+   SummarizeResults
+   \rm -f core
+}
+
+CleanWarnings()
+{
+   \egrep -vi "IDL Version" ${1} | \
+   \egrep -vi "Installation number"  | \
+   \egrep -vi "Licensed for use by" | \
+   sed /^Processing/d | \
+   sed /^Previous/d > ${1}.cleaned
+   mv  ${1}.cleaned ${1}
+}
+
+CleanTimes()
+{
+   \sed  -e "s/_[0-9]*_[0-9]*_[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]/_X_X-XXXX-XX-XXTXX:XX/" \
+         -e "s/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9]*.[0-9]*/XXXX-XX-XXTXX:XX:XX.XXX/" $1 > $1.cleaned
+   mv  ${1}.cleaned ${1}
+}
+
+
+# Do the actual comparison: $1 = the test result, #2 = the baseline reference
+# Returns zero for a failed test, and one for a passed test.
+Compare()
+{
+   Diffs=${PWD}/tmp_diff.txt
+   $Diff $DiffOption $1 $2 > $Diffs 2>/dev/null
+
+   if (($?)) ; then
+      print -n "\t\t\t **FAILED** (${1##*/})\n"
+      numFailed=numFailed+1
+      failedTests[numFailed]=$1
+      baseLines[numFailed]=$2
+   else
+      numPassed=numPassed+1
+      print "\t\t\t... passed. (${1##*/})"
+   fi
+   \rm -f $Diffs
+}
+
+# $1 is the base test name
+# $2 is product output directory name
+# $3 is the output directory
+CompareMultiFiles()
+{
+   basename=$1
+   dataOutput=$2
+   output_dir=$output_dir
+   data_output_dir=${output_dir}/${dataOutput}
+  
+   # First compare the standard out file. 
+
+   CleanWarnings ${output_dir}/${basename}.stdout
+   Compare  ${output_dir}/${basename}.stdout $RegBaseDir/${basename}.stdout
+
+   # Now compare as data
+
+   files=`ls ${RegBaseDir}/${dataOutput}`
+   set -A files $files
+   #let count=`ls ${data_output_dir} | wc -l`
+   let count=$(echo `ls ${data_output_dir} | wc -l`)
+   let baseCount=${#files[*]}
+   
+
+   if [[ $count -ne $baseCount ]]; then
+      numFailed=numFailed+1
+      print "\nError: The test did not generate the expected number of files!\n"
+      failedTests[numFailed]=": Incorrect number of files in ${data_output_dir} -- $count != $baseCount"
+      baseLines[numFailed]=""
+   else
+      for file in ${files[*]}; do
+         if [[ -e ${data_output_dir}/${file} ]]; then
+            CleanTimes ${data_output_dir}/${file}
+            Compare  ${data_output_dir}/${file} ${RegBaseDir}/${dataOutput}/${file}
+         else
+            numFailed=numFailed+1
+            failedTests[numFailed]=": File does not exists -- ${output_dir}/$file"
+            baseLines[numFailed]=""
+         fi
+      done
+   fi
+
+}
+
+# $1 is the test number
+# $2 is the test name
+# $3 is the name of executable to run
+# $4 is the output directory
+RunTest()
+{
+
+   test_num=$1
+   basename=$2
+   input_files=`ls ${TestCaseInput[$test_num]}`
+   output_dir=$4
+   cmd="idl $3 -args"
+
+   print "Test number $test_num: ${basename} ..."
+
+   # make sure the event directory exists
+   if [[ ! -d "${output_dir}/${basename}Events" ]] ; then
+      mkdir -p "${output_dir}/${basename}Events"
+   fi
+
+   if [[ ${TimeTest} -eq 1 ]]; then
+      cmd="${cmd} -time -verbose 0"
+   fi
+
+   cmd="${cmd} ${TestCaseCmdOptions[$test_num]}"
+   cmd="${cmd} -outDir ${output_dir} -VODir ${output_dir}/${basename}Events -VOEventSpecFile ${VOEventSpecFile} ${input_files}"
+
+   if [[ ${TimeTest} -eq 1 ]]; then
+      ${cmd}
+   else
+      ${cmd} > ${output_dir}/${basename}.stdout 2>&1
+      CompareMultiFiles $basename ${basename}Events $output_dir
+   fi
+
+}
+
+RunRegTest()
+{
+   if [ "$FlareTestToRun" != "" ] ; then
+      print "\n********* SDO Flare Regression Tests  ***********"
+      for i in $FlareTestToRun ; do
+         RunTest $i ${TestCase[$i]} ${OutputDir}/flare 
+      done
+   fi
+
+}
+
+SplitTestCases()
+{
+   for i in $TestCasesToRun ; do
+      found=0
+      for j in $TestsForFlare ; do
+         if [[ $j == $i ]] ; then
+	    FlareTestToRun="$FlareTestToRun $i"
+ 	    found=1
+	    break
+	 fi
+      done
+
+      if [[ $found == 1 ]] ; then
+         continue
+      fi
+
+   done
+}
+
+####################
+#  Parse Cmd Line  #
+####################
+
+while getopts c:d:lo:tw opt 2>/dev/null ; do
+   case $opt in
+
+      c) # Run subset of test cases, specified as either:
+	 #   a single test case, i.e.: -c 18
+	 #   quoted list of test cases, i.e.: -c "1 3 9 11"
+	 #   a closed sequence of tests, i.e: -c 3-11
+         Tool=$OPTARG
+         if [ "$Tool" = "flare" ]; then
+            RunSubset="$Tool"
+         else
+	    let lowerLimit=`echo $OPTARG | cut -d- -f1`
+	    let upperLimit=`echo $OPTARG | cut -d- -f2`
+	    if [ "$upperLimit" -eq "$lowerLimit" ] ; then
+	       TestCasesToRun="$OPTARG"
+	    else
+	       while [ $upperLimit -ge $lowerLimit ] ; do
+	          TestCasesToRun="$upperLimit $TestCasesToRun"
+		  let upperLimit=upperLimit-1
+	       done
+	    fi
+         fi
+	 ;;
+
+      d) # Change the regression test directory
+         RegDir=$OPTARG
+         RegBaseDir=${RegDir}/../baseline
+         ;;
+
+      l) # List the test cases
+	 print "\nThe current test cases are :\n"
+	 DefineTests
+	 for i in ${AllTestCases} ; do
+	    echo "Test set $i : ${TestName[$i]}"
+	 done
+	 exit 1
+ 	 ;;
+
+      o) # Change output dir
+	 OutDir=$OPTARG
+	 ;;
+
+      t) # Run time tests
+         TimeTest=1
+         ;;
+
+      w) # Ignore spaces when diff'ing files
+	 DiffOption="-w"
+	 ;;
+
+      h|*) Instruct
+	 ;;
+
+   esac
+done
+
+export IDL_PATH="${RegDir}:/proj/tlmtest2/sdo/sdosdc_svnrep/branches/sdcfd_trace/ryan_test:$IDL_PATH"
+
+#################
+# Begin testing #
+#################
+
+Initialize
+RunRegTest
+Finish
+
+exit $numFailed

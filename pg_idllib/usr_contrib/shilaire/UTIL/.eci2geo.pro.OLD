@@ -1,0 +1,38 @@
+; PSH, 2001/05/13
+
+; tranforms from Earth-Centered Inertial coordinates to geographic latitude, longitude and altitude
+; here, the Earth is assumed perfectly spheric
+
+;CALL SEQUENCE:
+;	eci2geo(incoord,time)
+
+; INPUT :
+;	incoord: an array of ECI (rectangular) coordinates (see eci2geodetic.pro for an explanation on ECI)
+;	time : UT time 
+
+;OUTPUT:
+;	an array of latitude [degrees], longitude [degrees] and altitude [km]
+
+; modified 2001/09/24 : added 'incoord = DOUBLE(incoord)'
+
+
+FUNCTION eci2geo,incoord,time
+Re=6378.137	; in km
+
+incoord = DOUBLE(incoord)
+
+theta=myarctan(incoord(0),incoord(1))
+t=anytim(time,/ex)
+ct2lst,gst,0,0,ten(t(0),t(1)),t(4),t(5),t(6)
+angle_sid=gst*2.*!PI/24.
+lon= (theta - angle_sid ) MOD (2* !PI)
+if lon lt 0. then lon=lon+(2* !PI)
+r=sqrt(incoord(0)^2+incoord(1)^2)
+lat=myarctan(r,incoord(2))
+alt=r/cos(lat) - Re
+
+lat=lat*180./(!PI)	; to convert into degrees...
+lon=lon*180./(!PI)
+
+RETURN,[lat,lon,alt]
+END

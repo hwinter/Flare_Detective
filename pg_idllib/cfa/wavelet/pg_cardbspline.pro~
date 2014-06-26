@@ -1,0 +1,17 @@
+;
+;returns cardinal B-spline
+;
+
+
+FUNCTION pg_cardbspline,x,m
+
+IF m EQ 0 THEN RETURN,x*0
+
+resarr=dblarr[n_elements(x),m]
+
+FOR i=1,m-1 DO BEGIN 
+ENDFOR
+
+
+END
+

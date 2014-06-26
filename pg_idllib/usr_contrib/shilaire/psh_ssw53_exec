@@ -1,0 +1,41 @@
+#!/usr/bin/csh -f
+
+#PSH 2001/09/28 
+#This simple file will execute any IDL batch files
+#USAGE:  psh_ssw_exec idlfile
+#The idlfile.pro must be in the !path, and must NOT start with PRO or FUNCTION !!!
+
+
+setenv RAPP_IDL_ROOT /ftp/pub/hedc/fs/data1/rapp_idl
+setenv PHOENIX_DATA_ARCHIVE /ftp/pub/rag/phoenix-2/observations
+
+unsetenv IDL_DIR
+#setenv  TMPDIR ~/.ragview
+setenv ENRAD_SAVE ~/.ragview
+
+setenv IDL_STARTUP $RAPP_IDL_ROOT/shilaire/totalidl_startup.pro
+
+setenv IDL_DIR /usr/local/rsi/idl_5.3
+
+setenv SSW /ftp/pub/hedc/fs/data1/ssw
+setenv HESSI_PATH $SSW/hessi
+#setenv SSW_INSTR "gen hessi xray spex ethz yohkoh"
+setenv SSW_INSTR "gen ethz hessi xray spex chianti yohkoh hxt sxt nrh trace eit goes"
+setenv USER_SYNOP_DATA /ftp/pub/hedc/fs/data3/users/shilaire/synop_data
+
+source $SSW/gen/setup/setup.ssw /loud
+
+setenv LPDEST lp_fg
+setenv LPDEST1 lp_eg
+setenv LPDEST2 lp_ew
+setenv LPDEST3 lp_dg
+
+#set log="/dev/null"
+set log="/global/hercules/users/shilaire/LOGS/misc_sswidlbatch/"$1".log"
+#set log=$1".log"
+
+set cmd="$SSW""/gen/bin/ssw_batch "$1" "$log
+eval $cmd
+
+echo "--------------------- Batch job ended on " `date` "-------------" >> $log
+exit

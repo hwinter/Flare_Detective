@@ -1,0 +1,20 @@
+#!/usr/bin/csh -f
+
+setenv IDL_DIR /usr/local/rsi/idl_5.3
+	setenv IDL_STARTUP /global/carme/home/shilaire/IDL/PSH_idl_startup.pro
+	setenv SSW /global/helene/local/ssw
+	setenv HESSI_PATH $SSW/hessi
+	setenv SSW_INSTR "gen hessi spex xray"
+	
+	#set log="/global/hercules/users/shilaire/LOGS/"$1".log"
+	set log="~/"$1".log"
+
+	set cmd="$SSW""/gen/bin/ssw_batch wastecputime "$log
+	eval $cmd
+
+	echo "--------------------- Batch job ended on " `date` "-------------" >> $log
+exit
+
+
+
+;rsh tethys /global/carme/home/shilaire/IDL/MISC/wastecputime_batch wastecputime

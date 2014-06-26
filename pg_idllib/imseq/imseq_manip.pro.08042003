@@ -1,0 +1,171 @@
+;.comp ~/rapp_idl/imseq/imseq_manip.pro
+;
+;imseq_manip,imseq=ptr
+;
+
+FUNCTION imseq_manip_outtext,mapstr
+
+startime=anytim((*(mapstr.imseq[mapstr.minfr])).time,/vms)
+endtime =anytim((*(mapstr.imseq[mapstr.maxfr])).time,/vms)
+
+outtext=['Start at frame '+strtrim(mapstr.minfr,2),startime,'','End at frame '+strtrim(mapstr.maxfr,2),endtime]
+
+RETURN,outtext
+
+END
+
+
+PRO imseq_manip_event,ev
+
+widget_control,ev.handler,get_uvalue=mapstr
+
+
+CASE ev.ID OF 
+    
+    widget_info(ev.top,find_by_uname='selectim') : BEGIN
+
+    mapstr.selim=ev.index
+    widget_control,ev.handler,set_uvalue=mapstr
+
+    winnum=widget_info(ev.top,find_by_uname='drawwin')
+    widget_control,winnum,get_value=winnum2
+    plot_map,*(mapstr.imseq[mapstr.selim]),window=winnum2
+    END
+
+
+    widget_info(ev.top,find_by_uname='selectmin') : BEGIN
+
+        IF ev.index NE mapstr.minfr THEN BEGIN
+            mapstr.totmap=ptr_new()
+            mapstr.minfr=ev.index
+
+            textwindow=widget_info(ev.top,find_by_uname='frameinfo')
+            widget_control,textwindow,set_value=imseq_manip_outtext(mapstr)
+
+            widget_control,ev.handler,set_uvalue=mapstr
+            
+        ENDIF
+    END
+
+    widget_info(ev.top,find_by_uname='selectmax') : BEGIN
+
+        IF ev.index NE mapstr.maxfr THEN BEGIN
+            mapstr.totmap=ptr_new()
+            mapstr.maxfr=ev.index
+
+            textwindow=widget_info(ev.top,find_by_uname='frameinfo')
+            widget_control,textwindow,set_value=imseq_manip_outtext(mapstr)
+  
+            widget_control,ev.handler,set_uvalue=mapstr
+        ENDIF
+    END     
+ 
+    widget_info(ev.top,find_by_uname='commands') : BEGIN
+        CASE ev.value OF
+            0 : BEGIN
+
+                IF mapstr.totmap EQ ptr_new() THEN BEGIN
+                    mapstr.totmap=ptr_new(summaps(mapstr.imseq $
+                                  ,min=mapstr.minfr,max=mapstr.maxfr))
+                ENDIF
+                widget_control,ev.handler,set_uvalue=mapstr
+                winnum=widget_info(ev.top,find_by_uname='drawwin')
+                widget_control,winnum,get_value=winnum2
+                plot_map,*(mapstr.totmap),window=winnum2 $
+                        ,contour=mapstr.contour,limb=mapstr.limb
+            END
+
+            1 : BEGIN
+                winnum=widget_info(ev.top,find_by_uname='drawwin')
+                widget_control,winnum,get_value=winnum2
+                plot_map,*(mapstr.imseq[mapstr.selim]),window=winnum2 $
+                        ,contour=mapstr.contour,limb=mapstr.limb
+            END
+
+            2 : BEGIN
+                mapstr.contour=1-mapstr.contour
+                widget_control,ev.handler,set_uvalue=mapstr
+            END
+
+            3 : BEGIN
+                mapstr.limb=1-mapstr.limb
+                widget_control,ev.handler,set_uvalue=mapstr
+            END
+
+            4 : BEGIN
+                widget_control,ev.top,/destroy
+            END
+            ELSE : RETURN
+        ENDCASE
+    END
+ 
+
+    ELSE : print,'Ciao'
+
+
+ENDCASE
+
+
+END 
+
+PRO imseq_manip,imseq=ptrimseq
+
+wh=where(ptrimseq NE ptr_new())
+tot=n_elements(wh)
+ptr=ptrarr(tot)
+FOR i=0,tot-1 DO ptr[i]=ptrimseq[wh[i]]
+
+mapstr={imseq:ptr,totmap:ptr_new(),minfr:0,maxfr:n_elements(ptr)-1 $
+       ,selim:0,contour:0,limb:0}
+
+base=widget_base(title='Image sequence manipulator',/row)
+root=widget_base(base,/row,uvalue=mapstr)
+menu1=widget_base(root,group_leader=root,/column,/frame)
+drawsurf1=widget_base(root,group_leader=root,/column)
+buttonm1=widget_base(menu1,group_leader=menu1,/row,/frame)
+
+
+minval=strarr(n_elements(ptr))
+FOR i=0,n_elements(ptr)-1 DO BEGIN
+    minval[i]=strtrim(i,2)
+ENDFOR
+
+
+
+values=['Draw total Image','Draw selected Image','Contour plot' $
+       ,'Limb','Done']
+
+uname='commands'
+bgroup=cw_bgroup(buttonm1,values,/column,uname=uname);,/frame)
+
+sellab=widget_base(buttonm1,group_leader=buttonm1,/column)
+images=strtrim(string(indgen(tot)),2)
+labelim=widget_label(sellab,value='Selected Frame')
+selim=widget_list(sellab,value=images,ysize=5,uname='selectim')
+text=widget_text(menu1,value=imseq_manip_outtext(mapstr),ysize=5 $
+                 ,uname='frameinfo')
+widget_control,selim,set_list_select=mapstr.selim
+
+selectframe=widget_base(menu1,group_leader=menu1,/row,/frame)
+sellab1=widget_base(selectframe,group_leader=menu1,/column);,/frame)
+label1=widget_label(sellab1,value='First frame     ')
+select1=widget_list(sellab1,value=minval,ysize=5,uname='selectmin')
+widget_control,select1,set_list_select=mapstr.minfr
+sellab2=widget_base(selectframe,group_leader=menu1,/column);,/frame)
+label2=widget_label(sellab2,value='Last frame      ')
+select2=widget_list(sellab2,value=minval,ysize=5,uname='selectmax')
+widget_control,select2,set_list_select=mapstr.maxfr
+
+draw=widget_draw(drawsurf1,xsize=512,ysize=512,uname='drawwin')
+;print,'draw='+string(draw)
+
+
+;mapstr.drawv=draw
+;mapstr.text=text
+
+widget_control,root,set_uvalue=mapstr
+widget_control,base,/realize
+
+xmanager,'imseq_manip',root,/no_block
+
+END

@@ -1,0 +1,224 @@
+;+
+;NAME:
+; 	rapp_cmb_spg
+;PROJECT:
+; 	ETHZ Radio Astronomy
+;CATEGORY:
+; 	Utility
+;PURPOSE:
+; This routine combines Phoenix and a HESSI spectrogram plots
+;
+;
+;CALLING SEQUENCE:
+; rapp_cmb_spg, time_interval, $
+;              PS=ps, ERANGE=erange, HLIN=hlin, PLIN=plin, BACKGROUND=back_interval
+;
+;INPUT:
+; time_interval : either a 2 element vector defining the time intervall or
+;                 a string defining the filename of a radiospectrogram
+; 
+;
+;KEYWORD INPUT:
+; PS	     : 	Generate plot for ps device. 
+; ERANGE     :  Energy range for the HESSI spectrogram. 2 element vector
+;               defining lowest and highest energy in keV.
+; HLIN       :  plot the HESSI values on a linear scale (default is log)
+; PLIN       :  plot the Phoenix spectrogram on a linear scale (default is log)
+; BACKGROUND :  a anytim interval, specifying the background interval :)
+; BW	     :  if set, will produce a black & white picture. Only useful in conjunction with the /PS keyword.
+; UT	     :  if set, will produce spectrograms with utplot instead of plot.
+;
+;OUTPUT:
+; combines both spectrograms
+;
+;CALLS
+; rapp_get_spectrogram 
+; rapp_hsi_spg
+; rapp_plt_spg
+; ragfitsread
+; anytim
+;
+;EXAMPLES
+; rapp_cmb_spg, ['09:22', '09:29']+' 28-Feb-2002'
+; rapp_cmb_spg, ['11:22', '11:27']+' 17-Apr-2002', /ps
+; rapp_cmb_spg, ['13:32', '13:36']+' 20-Apr-2002', /ps, erange=[0, 200]
+; rapp_cmb_spg, ['13:32', '13:36']+' 20-Apr-2002', /ps, erange=[0, 200], $
+;                 BACKGROUND=['13:32', '13:33']+' 20-Apr-2002'
+;
+;
+;HISTORY:
+;	Peter Messmer, 2002/05/02 created
+;		messmer@astro.phys.ethz.ch
+;	MODIFICATIONS:
+;	PSH 2002/10/01: added /BW keyword
+;	PSH 2002/11/19: added /UT keyword
+;
+;-
+PRO rapp_cmb_spg, time_interval, PS=ps, BW=BW, UT=UT,	 $
+                 ERANGE=erange, HLIN=hlin, PLIN=plin, BACKGROUND=back_interval
+
+ if keyword_set(PS) then begin
+     set_plot, 'PS' 
+     IF KEYWORD_SET(BW) THEN LOADCT,0 ELSE loadct, 5
+     device, /landscape, /color
+ endif
+
+;
+; read the phoenix spectrogram, either specified by the time interval
+; or by filename
+; 
+ if n_elements(time_interval) lt 2 then begin
+   print, 'Reading fits file '+time_interval[0]
+   ragfitsread, time_interval[0], pz, px, py, /silent, dateobs=dateobs
+   midnight = anytim(dateobs+' 00:00')
+   time_interval=midnight+[px(0), px(n_elements(px)-1)]
+ endif else begin
+    print, 'Loading Phoenix-Spectrogram'
+    pz = rapp_get_spectrogram( time_interval, /elim, /back, xaxis=px, yaxis=py)
+ endelse
+
+ if datatype(pz) eq 'STR' then begin
+   print, pz
+   pz = -1 
+   px = 0
+   py = 0
+ endif
+
+;
+; read the hessi spectrogram. Take the whole time interval as background
+; 
+ print, 'Generating Hessi Spectrogram'
+
+ if not keyword_set(background)  then back_interval = time_interval
+
+ hz = rapp_hsi_spg(time_interval, back_interval, $
+                   xaxis=hx, yaxis=hy, /high_energy)
+
+ if n_elements(hz) gt 1 then begin
+; 
+;  select the energy range, if specified
+; 
+   if keyword_set(ERANGE) then begin
+     ind = min(where(hy gt erange[1]))
+     if ind(0) ne -1 then begin
+       hy = hy(0:ind)
+       hz = hz(*, 0:ind)
+     endif 
+
+     ind = max(where(hy lt erange[0]))
+     if ind(0) ne -1 then begin
+       hy = hy(ind:*)
+       hz = hz(*, ind:*)
+     endif
+   endif
+ endif 
+
+ if NOT KEYWORD_SET(PLIN) then pz = alog10(pz > 1)
+ if NOT KEYWORD_SET(HLIN) then hz = alog10(hz > 1)
+
+ !p.multi=[0, 1, 2]
+
+ date = anytim(time_interval[0], /date_only)
+ pxaxis = px + double(anytim('00:00 '+date))
+ hxaxis = hx + double(anytim(time_interval[0]))
+
+ np = n_elements(pxaxis)
+ nh = n_elements(hxaxis)
+
+ if (n_elements(pz) gt 1) and (n_elements(hz) gt 1) then begin  
+   if(pxaxis(0) le hxaxis(0)) then begin
+    si = min(where(pxaxis gt hxaxis(0)))
+    if (si gt 0) and (si lt n_elements(pxaxis)-1) then begin
+      pz = pz(si:*, *)
+      pxaxis = pxaxis(si:*)
+      np =n_elements(pxaxis)
+    endif
+   endif else begin
+    si = min(where(hxaxis gt pxaxis(0)))
+    if (si gt 0) and (si lt n_elements(hxaxis)-1) then begin
+        hz = hz(si:*, *)
+        hxaxis = hxaxis(si:*)
+        nh =n_elements(hxaxis)
+    endif 
+   endelse
+
+
+   if(pxaxis(np-1) ge hxaxis(nh-1)) then begin
+    ei = max(where(pxaxis lt hxaxis(nh-1)))
+    if (ei gt 0) and (ei lt np-1) then begin 
+       pz = pz(0:ei, *)
+       pxaxis = pxaxis(0:ei)
+       np =n_elements(pxaxis)
+    endif
+   endif else begin
+    ei = max(where(hxaxis lt pxaxis(nh-1)))
+    if (ei gt 0) and (ei lt nh-1) then begin 
+      hz = hz(0:ei, *)
+      hxaxis = hxaxis(0:ei) 
+      nh =n_elements(hxaxis)
+    endif
+   endelse
+
+ endif 
+
+ start_date = anytim(hxaxis(0), /yohkoh, /trunc)
+ 
+ pxaxis = pxaxis - hxaxis(0)
+ hxaxis = hxaxis - hxaxis(0) 
+
+ if n_elements(pxaxis) gt n_elements(hxaxis) then begin
+   xaxis= pxaxis
+ endif else begin
+   xaxis = hxaxis
+ endelse
+
+ xresample = max([n_elements(pxaxis), n_elements(hxaxis)])
+
+ ymargin = !y.margin
+
+ if n_elements(pz) gt 1 then begin
+   ymargin = [4, 2]
+   !y.margin=[1, ymargin[1]]
+ 
+   xtickname = make_array(n_elements(!x.tickname), value=' ', /string)
+   if n_elements(hz) gt 1 then begin
+      title='Phoenix-2 and RHESSI spectrograms' 
+      xtitle=''
+   endif else begin
+      title='Phoenix-2 spectrogram'
+      xtitle='Seconds after '+start_date
+   endelse
+ 
+   rapp_plt_spg, pz, pxaxis, py, $
+         ytitle='Frequency [MHz]', xtitle=xtitle, $
+         title=title, $
+         xtickname=xtickname, PS=ps, xresample=xaxis
+
+   !y.margin=[ymargin[0], 0]
+ endif 
+
+ if n_elements(pz) le 1 then title='RHESSI spectrogram' else title=''
+
+IF NOT KEYWORD_SET(UT) THEN BEGIN
+ rapp_plt_spg, hz, hxaxis, hy, /ylog,	$
+         xtitle='Seconds after '+start_date, $
+         ytitle='Energy [keV]', title=title, $
+         yresample=20, PS=ps, xresample=xaxis, /int
+ENDIF ELSE BEGIN
+ rapp_plt_spg, hz, hxaxis+anytim(start_date), hy, /ylog,	$
+         ytitle='Energy [keV]', title=title, $
+         yresample=20, PS=ps, xresample=xaxis+anytim(start_date), /int ,/UT
+ENDELSE
+
+ !y.margin = ymargin
+ 
+  if keyword_set(PS) then begin
+    device, /close
+    set_plot, 'X'
+  endif
+
+end
+
+
+
+

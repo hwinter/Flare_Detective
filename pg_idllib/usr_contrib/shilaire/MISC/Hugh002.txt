@@ -1,0 +1,231 @@
+
+; IDL Version 5.2 (OSF alpha)
+; Journal File for hudson@isass1.solar.isas.ac.jp
+; Working directory: /home/hudson
+; Date: Fri Sep  1 13:48:52 2000
+ 
+infil = 'YOHKOH/1999_07_25/spr990725.1300'
+rd_roadmap,infil,rm		// je peux rajouter [,nbrimages] 
+print,gt_dp_mode(9,/str)  	// juste pour voir quel dp_mode correspond a FLARE
+;Flare  
+
+ff = where(gt_dp_mode(rm) eq 9)	// creates a linear array of elements that satisfy
+				//..the criterion
+rd_xda,infil,ff,sindex,sdata	// ff gives the sets to be extracted (and in what
+				//..order)
+subs = where(gt_res(sindex) eq 2)	// subs prend juste les images de
+					//..resolution 2 (Qtrt)
+
+;
+; checking for beautiful ejecta
+;
+
+loadct,5
+////over
+stepper,sindex,sdata,subs=subs,xs=256	// affiche juste les images de subs,
+					//..mais avec la vrai numerotation
+
+;
+; oh no! a big gap!
+;
+
+fmt_timer,rm,t1,t2
+;(first, last) = '25-JUL-99  13:05:48', '25-JUL-99  14:01:30'
+
+plot_goes,t1,t2,/fillnight,/fillsaa	// should be very interesting...
+; ---------------------------
+;| GOES 9 off, trying GOES 8 |
+; ---------------------------
+
+evt_grid,sindex
+;
+; yes, a big gap right at the impulsive phase
+;
+
+hinfil='YOHKOH/1999_07_25/hda990725.1300
+rd_xda,hinfil,-1,hindex,hdata	// -1 means all file is read
+cts = ave_cts(hindex,hdata,time=time)
+wdef,1
+utplot,time,cts(0,*,*),hindex(0)
+utplot,time,cts(0,*,*),hindex(0),psym=3
+outplot,time,cts(1,*,*),hindex(0),psym=3
+!p.multi = [0,1,2]
+utplot,time,cts(0,*,*),hindex(0),psym=3
+utplot,time,cts(1,*,*),hindex(0),psym=3
+;
+; nice hard-spectrum onset; "superhot" source later on
+;
+
+neupert_plot,t1,t2,hinfil,/hxt
+; % NEUPERT_PLOT: Incorrect number of arguments.
+
+chkarg,'neupert_plot
+;---- Module: neupert_plot.pro
+;---- From:   /ssw_isass5/yohkoh/ucon/idl/sxt_co
+;---> Call: pro neupert_plot, tt1, tt2, hxt=hxt, qdebug = qdebug, infil = infil, $
+;logplot=logplot, bad=bad, channel=channel, back=back, gif=gif, ps=ps, $
+;eps=eps
+
+neupert_plot,t1,t2,infil=hinfil,/hxt
+;(first, last) = '25-JUL-99  13:03:22', '25-JUL-99  14:01:46'
+;Defaulting to GOES9
+
+!p.multi=0
+pr_gev,'25-jul-99
+;PR_GEV.PRO Run on:  1-Sep-2000 14:00:17.00
+;  
+;   Date       Time (UT)      X-Ray Opt Loca- NOAA      Peak Radio    Reports
+;           Begin  Max   End  Class Imp tion  Region
+;  bb
+;25-JUL-99  00:57 01:03 01:05  C5.2                                 
+;25-JUL-99  01:18 01:33 01:59  C8.5                                 
+;25-JUL-99  04:14 04:32 04:38  M1.0                                 
+;25-JUL-99  05:08 05:13 05:19  C3.8                                 
+;25-JUL-99  08:19 08:33 08:45  C3.9                                 
+;25-JUL-99  13:08 13:38 14:17  M2.4 SF N38W81 8639                    
+;25-JUL-99  18:36 18:41 18:45  C3.1                                 
+
+stepper,sindex,sdata,subs=thinal_index(sindex),xs=256
+;
+; Ah so! I recognize this event, it is one Harry Warren wrote a nice
+; paper on - ApJ 527, L121-L124 (1999). It was a clear FeXXIV source
+; in the TRACE 195-A images.
+;
+; I haven't looked at the HXT data for this but will now do so.
+;
+
+stepper,sindex,sdata,subs=thinal_index(sindex),xs=256
+
+q
+info = get_info(sindex(15))
+;   0 25-JUL-99  13:09:22  FL/H  Open /Al.1  Full Norm C  10    28.0   64x 64
+;Total Number of Images =            1
+
+thinal=thinal_index(sindex)
+info = get_info(sindex(thinal(indgen(14))))
+;   0 25-JUL-99  13:09:22  FL/H  Open /Al.1  Full Norm C  10    28.0   64x 64
+;   1 25-JUL-99  13:10:04  FL/H  Open /Al.1  Full Norm C  10    28.0   64x 64
+;   2 25-JUL-99  13:10:44  FL/H  Open /Al.1  Full Norm C  10    28.0   64x 64
+;   3 25-JUL-99  13:11:24  FL/H  Open /Al.1  Full Norm C  10    28.0   64x 64
+;   4 25-JUL-99  13:12:04  FL/H  Open /Al.1  Full Norm C  10    28.0   64x 64
+;   5 25-JUL-99  13:12:42  FL/H  Open /Al.1  Full Norm C  10    28.0   64x 64
+;   6 25-JUL-99  13:22:14  FL/H  Open /Al.1  Full Norm C   4     2.9   64x 64
+;   7 25-JUL-99  13:22:32  FL/H  Open /Al.1  Full Norm C   2     1.0   64x 64
+;   8 25-JUL-99  13:22:50  FL/H  Open /Al.1  Full Norm C   4     2.9   64x 64
+;   9 25-JUL-99  13:23:08  FL/H  Open /Al.1  Full Norm C   2     1.0   64x 64
+;  10 25-JUL-99  13:23:26  FL/H  Open /Al.1  Full Norm C   4     2.9   64x 64
+;  11 25-JUL-99  13:23:44  FL/H  Open /Al.1  Full Norm C   2     1.0   64x 64
+;  12 25-JUL-99  13:24:02  FL/H  Open /Al.1  Full Norm C   4     2.9   64x 64
+;  13 25-JUL-99  13:24:20  FL/H  Open /Al.1  Full Norm C   2     1.0   64x 64
+;Total Number of Images =           14
+;
+; enough range to cover both phases
+;
+
+thinal=thinal_index(sindex)
+ss = thinal(indgen(14))
+sxt_prep,sindex(ss),sdata(*,*,ss),siout,sdout,/reg,/norm
+;           *****   SXT_PREP  Ver 1.63  10-jan-2000   *****
+;--------------------------------------------------------------
+;  The /DC_INTERPOLATE option is strongly recommended          
+;  SXT_PREP is setting this option automatically               
+;  Use "DC_INTERPOLATE=0 to disable dark current interpolation 
+;--------------------------------------------------------------
+;       2.5510358 DN shift because of ROI location
+;SXT_PREP took:        7.8176604 minutes to process your request
+
+
+stepper,siout,sdout
+
+stepper,siout,sdout,xs=512
+; I'm kind of astonished by the soft X-ray morphology here. The 
+; initial source _looks_ like a footpoint, and that's where the
+; HXT emission will be, but it is far to bright in soft X-rays
+; relative to the coronal loops. So it is bipolar. Hmmm. I will
+; now pause to re-read Warren's paper.
+;
+; Hmmm. Not much about HXT in that paper. 
+;
+
+print,xy
+;     -6.38171      2.26145
+;
+; these coordinates do not mean much to me either
+;
+
+xy = gt_center(sindex(15),/ang)
+print,xy
+;      796.111      550.496
+;
+; these coordinates (arcsec from Sun center) are SOHO/TRACE standardss
+;
+
+xy = gt_center(sindex(15),/hxt)
+;
+; Now some HXT images
+;
+
+
+retall
+;
+chkarg,'hxt_multimg'
+
+
+print,xy
+;     -6.38171      2.26145
+
+
+retall
+
+hxt_multimg,hindex,hdata,iout,dout,chan=0
+; INPUT THE FLARE POSITION IN HXT X AND Y COORDINATES.>>
+; -6.38171      2.26145
+;BACKGROUND SELECTION::
+;25-JUL-99  13:57:57.980   TO   25-JUL-99  13:59:57.980
+;IMAGE INTERVAL SELECTION::
+;25-JUL-99  13:23:19.984   TO   25-JUL-99  13:24:08.984
+;*** UP TO           99 DATA SETS PER INTERVAL
+; 99
+; LO CHANNEL 
+;
+; this looks more reasonable. Should overlay well with
+; the SXT loop tops
+;
+
+stepper,sindex,sdata,subs=thinal_index(sindex),xs=256
+
+////stepper,siout,sdout,xs=256
+
+////ocontour,dout,bin=4
+////tvscl,rebin(sdout(*,*,6),512,512,/samp)
+ocontour,dout,bin=8
+grid,1,1,512
+
+print,fmt_tim(siout(6))
+;25-JUL-99  13:22:14
+
+print,fmt_tim(iout)
+;25-JUL-99  13:23:19
+
+xyouts,10,10,/dev,charsi=1.5,'SXT 13:22:14; contour HXT 13:23:19 LOW'
+out=tvrd()
+tvlct,r,g,b,/get
+////write_gif,'~hudson/public_html/scratch/990725.gif',out,r,g,b
+write_gif,'YOHKOH/1999_07_25/wow.gif',out,r,g,b
+
+
+
+
+
+	levels  - IDL contour command
+        max_value- IDL contour command
+        color   - IDL contour command
+        c_thick - IDL contour command
+        c_linestyle - IDL contour command
+        nlevels - IDL contour command
+        c_labels- IDL contour command
+        c_color - IDL contour command
+        c_charsize - IDL contour command
+        c_annotation - IDL contour command
+        c_orientation - IDL contour command
+        c_spacing - IDL contour command

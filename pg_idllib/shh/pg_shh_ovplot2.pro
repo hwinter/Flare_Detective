@@ -1,0 +1,209 @@
+;+
+;
+; NAME:
+;        pg_shh_ovplot2
+;
+; PURPOSE: 
+;        overview plots
+;
+; CALLING SEQUENCE:
+;
+;        pg_shh_ovplot,fitres,...
+;
+; INPUTS:
+;
+;        fitres: a sstructure with TAGS:
+;   TIME            DOUBLE    Array[n]
+;   CHISQ           DOUBLE    Array[n]
+;   FITPAR          DOUBLE    Array[9, n]
+;   RESIDUALS       DOUBLE    Array[x, n]
+;   CNTSPECTRA      DOUBLE    Array[x, n]
+;   CNTESPECTRA     DOUBLE    Array[x, n]
+;   CNTMODELS       DOUBLE    Array[x, n]
+;   BSPECTRUM       FLOAT     Array[x]
+;   BESPECTRUM      FLOAT     Array[x]
+;   ENORM           FLOAT           50.0000
+;   ERANGE          INT       Array[2]
+;   THERMRANGE      INT       Array[2]
+;   NONTHERMRANGE   INT       Array[2]
+;   PARINFO         POINTER   Array[n]
+;
+; OUTPUT:
+;        
+; EXAMPLE:
+;
+;        
+;
+; VERSION:
+;
+;     DEC-2003 written
+;        
+;
+; AUTHOR
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;-
+
+;.comp pg_shh_ovplot2
+
+PRO pg_shh_ovplot2,fitres,rise=rise,decay=decay,flat=flat,parplotst=parplotst
+
+  oldcharsize=!P.charsize
+  !P.charsize=0.6
+
+  loadct,0
+  linecolors
+
+  mineb=40
+  maxeb=70
+
+
+  r0=reform(rise[0,*])
+  d0=reform(decay[0,*])
+  f0=reform(flat[0,*])
+  ind=sort([r0,d0,f0])
+  allphases=[[rise],[decay],[flat]]
+  allphases=allphases[*,ind]
+
+  time=fitres.time
+
+  data=fitres.cntspectra
+  eband=fitres.cntedges
+
+  ind=where(eband[*,0] GE mineb AND eband[*,1] LE maxeb)
+  lc=total(data[ind,*],1)/(maxeb-mineb)
+     
+  ebandtitle=strtrim(mineb,2)+'-'+strtrim(maxeb,2)+' keV'
+
+  ;select plot par here...
+
+  p1=fitres.fitpar[parplotst.parplot[0],*]
+  p2=fitres.fitpar[parplotst.parplot[1],*]
+
+  p1range=parplotst.parrange[0:1]
+  p2range=parplotst.parrange[2:3]
+
+  xlog=parplotst.parlog[0]
+  ylog=parplotst.parlog[1]
+
+  pg_setplotsymbol,'CIRCLE'
+
+  p1name=fitres.parnames[parplotst.parplot[0]]
+  p2name=fitres.parnames[parplotst.parplot[1]]
+
+  FOR i=0,n_elements(allphases)/2-1 DO BEGIN 
+
+  ;i=20
+
+     intv=allphases[*,i]
+  
+     utplot,time-time[0],lc,time[0],yrange=[1d-1,1d4],ystyle=1 $
+           ,/xstyle,title='EBAND '+ebandtitle,/ylog,position=[0.1,0.75,0.45,0.985]
+
+     outplot,time[intv[0]:intv[1]]-time[0],lc[intv[0]:intv[1]],time[0],color=2
+
+     outplot,time-time[0],0.1+0.1*fitres.atten_state,time[0],color=12,thick=2    
+
+     utplot,time-time[0],lc,time[0],yrange=[1d-1,1d4],ystyle=1,/noerase $
+           ,/xstyle,title='EBAND '+ebandtitle,/ylog,position=[0.55,0.75,0.95,0.985] $
+           ,timerange=[time[intv[0]],time[intv[1]]]+[-180,180],psym=10
+
+     outplot,time[intv[0]:intv[1]]-time[0],lc[intv[0]:intv[1]],time[0],color=2,psym=10
+
+     outplot,time-time[0],0.1+0.1*fitres.atten_state,time[0],color=12,thick=2    
+
+     utplot,time-time[0],p1,time[0],yrange=p1range,ystyle=1+8,/noerase $
+           ,/xstyle,title=p1name+' & '+p2name,ylog=xlog,position=[0.1,0.45,0.45,0.7] 
+
+     outplot,time[intv[0]:intv[1]]-time[0],p1[intv[0]:intv[1]],time[0],color=2
+
+     axis,max(time)-time[0],1,/yaxis,yrange=p2range[[1,0]],ylog=ylog,/save
+     outplot,time-time[0],p2,time[0],color=10
+     outplot,time[intv[0]:intv[1]]-time[0],p2[intv[0]:intv[1]],time[0],color=5
+
+     utplot,time-time[0],p1,time[0],yrange=p1range,ystyle=1+8,/noerase $
+            ,/xstyle,title=p1name+' & '+p2name,ylog=xlog,position=[0.55,0.45,0.95,0.7] $
+            ,timerange=[time[intv[0]],time[intv[1]]]+[-180,180]
+
+     outplot,time[intv[0]:intv[1]]-time[0],p1[intv[0]:intv[1]],time[0],color=2
+
+     axis,time[intv[1]]+180-time[0],1,/yaxis,yrange=p2range[[1,0]],ylog=ylog,/save
+     outplot,time-time[0],p2,time[0],color=10
+     outplot,time[intv[0]:intv[1]]-time[0],p2[intv[0]:intv[1]],time[0],color=5
+
+     
+     plot,p1,p2,xrange=p1range,yrange=p2range,xlog=xlog,ylog=ylog $
+         ,/noerase,position=[0.1,0.1,0.6,0.4],/nodata,xtitle=p1name,ytitle=p2name
+
+;     tvlct,r,g,b,/get
+;     loadct,0
+
+     oplot,p1,p2,color=128,psym=8
+;     tvlct,r,g,b
+     oplot,p1[intv[0]:intv[1]],p2[intv[0]:intv[1]],color=2,psym=8
+
+     p1s=xlog EQ 0 ? p1[intv[0]:intv[1]] : alog(p1[intv[0]:intv[1]])
+     p2s=ylog EQ 0 ? p2[intv[0]:intv[1]] : alog(p2[intv[0]:intv[1]])
+
+     sixlin,p1s,p2s,a,siga,b,sigb
+
+     x=xlog EQ 1 ? alog(p1range) : p1range
+     y1=ylog EQ 1 ? exp(a[0]+b[0]*x) : a[0]+b[0]*x
+     y2=ylog EQ 1 ? exp(a[1]+b[1]*x) : a[1]+b[1]*x
+     y3=ylog EQ 1 ? exp(a[2]+b[2]*x) : a[2]+b[2]*x
+
+     oplot,p1range,y1,color=5
+     oplot,p1range,y2,color=5
+     oplot,p1range,y3,color=5
+
+     oplot,p1[intv[0]:intv[1]],p2[intv[0]:intv[1]],color=2,psym=8
+
+     ;xyout relevant info
+
+     ;fit data?
+     
+     txlog=xlog EQ 1 ? 'log(' : ''
+     texlog=xlog EQ 1 ? ')' : ''
+     tylog=ylog EQ 1 ? 'log(' : ''
+     teylog=ylog EQ 1 ? ')' : ''
+
+     ;find pivot point
+
+     enorm=fitres.enorm
+     epiv=enorm*exp(-b[2])
+     fpiv=epiv/enorm*exp(-a[2])
+     
+
+     ;write results
+
+     xyouts,0.7,0.35,/normal,'FITPAR '+tylog+'y'+teylog+'=a+b*'+txlog+'x'+texlog
+     xyouts,0.7,0.3,/normal,'a: '+strtrim(a[2],2)
+     xyouts,0.7,0.25,/normal,'b: '+strtrim(b[2],2)
+     IF xlog AND NOT ylog THEN BEGIN 
+        
+        xyouts,0.7,0.15,/normal,'PIV NRG : '+strtrim(epiv,2)+' keV'
+        xyouts,0.7,0.1,/normal, 'PIV FLUX: '+strtrim(fpiv,2)
+
+     ENDIF
+
+
+     
+
+
+  ENDFOR
+
+  !p.charsize=oldcharsize
+
+
+END
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,72 @@
+;+
+; NAME:
+;
+; pg_ecut_compenergy
+;
+; PURPOSE:
+;
+; computes the total energy (and, optionally, particle number) in an electron
+; spectrum with a low energy cutoff (or turnover)
+;
+; CATEGORY:
+;
+; spectral utility
+;
+; CALLING SEQUENCE:
+;
+; energy=pg_ecut_compenergy(fnorm,delta,ecut [,enorm=enorm,/trunover])
+;
+; INPUTS:
+;
+; fnorm: electron flux (electron s^-1 keV^-1) at enorm
+; delta: electron spectral index (should be a number <0)
+; ecut: cutoff energy
+;
+; OPTIONAL INPUTS:
+;
+; enorm: normalization energy (default: 50. keV)
+;
+; KEYWORD PARAMETERS:
+;
+; turnover: if set, then a turnover spectrum rather than cutoff is used
+;           this means that the electron flux is below the cutoff energy is constant. 
+;
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+; AUTHOR:
+;
+; Paolo Grigis, pgrigis@astro.phys.ethz.ch
+;
+; MODIFICATION HISTORY:
+;
+; 23-JUL-2007 written PG 
+;
+;-
+
+

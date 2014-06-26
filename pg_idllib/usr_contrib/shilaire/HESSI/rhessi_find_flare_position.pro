@@ -1,0 +1,280 @@
+;+
+;NAME:
+; 	rhessi_find_flare_position.pro
+;PROJECT:
+;
+; HESSI at ETHZ
+;
+;CATEGORY:
+; 
+;PURPOSE:
+;	To find the position of a flare, given a flare time interval, and a WISHED (i.e. might be shifte if bad interval) time where imaging is to be made.
+;
+;PLANNED IMPROVEMENT:
+;
+;CALLING SEQUENCE:
+; 	pos=rhessi_find_flare_position(flare_intv, besttime, LOUD=LOUD, FURTHER=further,warning=warning,time_intv=time_intv)
+;
+;INPUT:
+;	flare_intv: the interval to be considered for flare position finding
+;	besttime  : the wished time for position finding (will shift, if needed, i.e. if aspect object gives bad reading...)
+;
+;OPTIONAL INPUT KEYWORDS:
+;	LOUD	: if set, will plot some pictures...
+;	FURTHER: if set to 1, will check with other collimators (9, and eventually 7 if disagreement)
+;		if set to 2, as 1, plus if all three collimators give different flare location, will return brightest pixel in SC#8 bproj map...(instead of -1)
+;	eband: default is [12,25]
+;	REFINE: if set, will zoom-in on current flare position, make a smaller image, and return its brightest pixel.
+;
+;OUTPUT:
+; 	- the flare position [x,y] in arcsec from Sun center if everything performed OK. 
+;	- -2 if failed because could not find an appropriate imaging time (bad aspect solution...).
+;	- -1 for other failures (could not find source in bproj maps.).
+;
+; OPTIONAL OUTPUT KEYWORDS:
+;	warning:
+;	time_intv: the final, GOOD time interval found (if any) for imaging and finding flare position
+;
+; PLANED OPTIMIZATION:
+;	- need to transport imno object (so that I do not need to redo an eventlist once the time_intv is set...): weird problems there....????
+;	- what if flare position is really NEAR (on top of) the spin axis: I'm toast unless I used FURTHER=2... but if I did, I would have been
+;	toast in case of bad aspect data et al.  Life is a misery...
+;
+;EXAMPLE:
+;	1) pos=rhessi_find_flare_position('2002/02/26 '+['10:25:48','10:30:00'], '2002/02/26 10:26:50', FURTHER=1,/REFINE,time_intv=time_intv)
+;	2) 	flo=hsi_flare_list()
+;		flo->set,obs_time='2002/09/27 '+['13:00','13:30']
+;		fl=flo->getdata()
+;		pos=rhessi_find_flare_position([fl[0].START_TIME,fl[0].END_TIME], fl[0].PEAK_TIME, FURTHER=1,/REFINE)
+;
+;HISTORY:
+;	PSH, December 2002
+;
+;-
+
+;=========================================================================================================================================================            
+FUNCTION rhessi_find_flare_position_subprg, time, coll=coll, LOUD=LOUD, eband=eband, $
+			warning=warning
+			
+	;1) use collimator 8
+	;2) if failure in producing plot, try another time range
+	;3) if less than 3000 counts, take triple time_intv....
+	
+	IF NOT KEYWORD_SET(coll) THEN coll=7	;coll#8 seems to be slightly more reliable than SC#7 or SC#9 for this.
+
+	detres=[2.3,3.9,6.9,11.9,20.7,35.9,62.1,107.,186.]
+	warning=0
+	err=0
+	CATCH,err
+	IF err NE 0 THEN BEGIN
+		CATCH,/CANCEL
+		PRINT,'............CAUGHT ERROR!...'
+		HELP, /Last_Message, Output=theErrorMessage
+                FOR j=0,N_Elements(theErrorMessage)-1 DO PRINT, theErrorMessage[j]
+		PRINT,'............Problem with rhessi_find_flare_position_subprg.pro: returning -1...'
+		RETURN,-1
+	ENDIF
+
+	IF N_ELEMENTS(time) EQ 2 THEN time_intv=anytim(time) ELSE time_intv=anytim(time)+[-6.,6.]*rhessi_get_spin_period(time,/DEF)
+	imo=hsi_image()
+	imo->set,time_range=time_intv,energy_band=eband
+	imo->set,image_dim=128,pixel_size=16,xyoffset=[0,0]	; just about anything should be a point source with this resolution...
+	tmp=BYTARR(9) & tmp[coll]=1B & imo->set,det_index=tmp
+	img=imo->getdata()
+	IF img[0,0] EQ -1 THEN MESSAGE,'....... getdata on image failed!!!'
+	info=imo->get()
+
+	tmp=imo->get(/binned_n_event) & counts=tmp[coll,0]
+	cbe=imo->GetData( CLASS_NAME = 'HSI_Calib_eventlist' )
+	P_m=MEAN( (*cbe[coll,0]).gridtran*(1.+(*cbe[coll,0]).modamp*cos((*cbe[coll,0]).phase_map_ctr)))	
+	;assuming the source is over-resolved, one should have a relative amplitude of 1, and hence:
+	theoretical_peakvalue=1.0*counts/P_m
+		
+	ij=max2d(img)
+	x=(ij[0]-info.image_dim[0]/2)*info.pixel_size[0]
+	y=(ij[1]-info.image_dim[1]/2)*info.pixel_size[1]
+	PRINT,'Expected peak value (single point source) = '+strn(theoretical_peakvalue)
+	PRINT,'Peakvalue = '+strn(MAX(img))+' at position: '+strn(x)+' '+strn(y)+' .'
+
+	xy_spin_axis=rhessi_get_spin_axis_position(time_intv,radius=radius,sigma_radius=sigma_radius)
+	IF N_ELEMENTS(xy_spin_axis) NE 2 THEN BEGIN
+		warning=warning+4	;bit 2
+		GOTO,THEEND
+	ENDIF
+	
+;-------1) if brightest pixel is more than radius+3*sigma_radius away from spin axis, must be the right place.
+	; (another check could involve the expected flux for a single point source in this brightest pixel...)
+		IF ( (x-xy_spin_axis[0])^2 + (y-xy_spin_axis[1])^2 )^0.5 GT detres[coll] THEN GOTO,THEEND
+	
+;-------2) if the brightest pixel was close to the spin axis, it is suspected to be an effect of the spin axis.
+	;	hence, put every pixel near the spin axis to zero, and find a new "brightest pixel" in the overall map.
+		img2=img	;img2 will have all pixels near the spin axis put to zero.
+		FOR i=0,N_ELEMENTS(img[*,0])-1 DO BEGIN
+			FOR j=0,N_ELEMENTS(img[0,*])-1 DO BEGIN
+				IF ( info.pixel_size[0]*((i-ij[0])^2 + (j-ij[1])^2 )^0.5) LE detres[coll] THEN img2[i,j]=0.			
+			ENDFOR
+		ENDFOR
+		ij2=max2d(img2)
+		x=(ij2[0]-info.image_dim[0]/2)*info.pixel_size[0]
+		y=(ij2[1]-info.image_dim[1]/2)*info.pixel_size[1]
+		PRINT,'New peakvalue = '+strn(MAX(img2))+' at position: '+strn(x)+' '+strn(y)+' .'
+		
+;-------3) issue a warning whenever the new position is along the edge of the previously zeroed spin axis region...
+		IF ((x-xy_spin_axis[0])^2 + (y-xy_spin_axis[0])^2)^0.5 LE (detres[coll]*1.1) THEN warning=warning+2	; bit 1
+
+;---------
+THEEND:
+;------- issue warning if total number of counts was a bit low...
+		IF counts LT 600 THEN warning=warning+1	; bit 0	; the value of 600 is empirical. Twice as much is sometimes still dodgy, twice as less is sometimes OK...
+
+
+	IF KEYWORD_SET(LOUD) THEN BEGIN
+		imo->plot,/limb,label_size=1.0,xtit='',ytit='',tit='',mar=0.01,xmar=[1,1],ymar=[1,1],xtickname=REPLICATE(' ',10),ytickname=REPLICATE(' ',10)
+		;display spin axis position
+		IF N_ELEMENTS(xy_spin_axis) EQ 2 THEN BEGIN
+			PLOTS,/DATA,[xy_spin_axis[0],xy_spin_axis[0]],[-1000,1000],linestyle=1
+			PLOTS,/DATA,[-1000,1000],[xy_spin_axis[1],xy_spin_axis[1]],linestyle=1
+		ENDIF
+		;display found flare location
+		PLOTS,/DATA,[x,x],[-1000,1000],linestyle=0
+		PLOTS,/DATA,[-1000,1000],[y,y],linestyle=0		
+		;display number of counts...
+		XYOUTS,/DATA,600,-950,strn(counts)
+		IF warning GT 0 THEN BEGIN
+			text='Warning: '+strn(warning)
+			XYOUTS,/DATA,-950,-950,text
+		ENDIF
+		imo->set,det_index=[0,0,0,0,0,0,1,0,0]
+		imo->plot,/limb,label_size=1.0,xtit='',ytit='',tit='',mar=0.01,xmar=[1,1],ymar=[1,1],xtickname=REPLICATE(' ',10),ytickname=REPLICATE(' ',10)
+		imo->set,det_index=[0,0,0,0,0,0,0,0,1]
+		imo->plot,/limb,label_size=1.0,xtit='',ytit='',tit='',mar=0.01,xmar=[1,1],ymar=[1,1],xtickname=REPLICATE(' ',10),ytickname=REPLICATE(' ',10)	
+	ENDIF
+
+	OBJ_DESTROY,imo
+	RETURN,[x,y]
+END
+;=====================================================================================================================
+FUNCTION rhessi_find_flare_position, flare_intv, anytime, LOUD=LOUD, FURTHER=FURTHER, REFINE=REFINE, eband=eband,	$
+	warning=warning,time_intv=time_intv	;OUTPUT keywords.
+
+;IF NOT KEYWORD_SET(flare_intv) THEN flare_intv=anytim(wished_time)+[-60.,60.]
+IF NOT KEYWORD_SET(eband) THEN eband=[12,25]
+detres=[2.3,3.9,6.9,11.9,20.7,35.9,62.1,107.,186.]
+	wished_time=anytim(anytime)
+
+	time_intv=rhessi_return_nice_intv(flare_intv, wished_time, min_wished_spin_periods=14, max_spin_periods=15)
+	pos=rhessi_find_flare_position_subprg(time_intv,LOUD=LOUD,warning=warning,eband=eband)
+
+	IF N_ELEMENTS(pos) EQ 1 THEN BEGIN
+		wished_time=( anytim(flare_intv[0]) + anytim(anytime) )/2.
+		time_intv=rhessi_return_nice_intv(flare_intv, wished_time, min_wished_spin_periods=14, max_spin_periods=15)
+		pos=rhessi_find_flare_position_subprg(time_intv,LOUD=LOUD,warning=warning,eband=eband)		
+	ENDIF
+	IF N_ELEMENTS(pos) EQ 1 THEN BEGIN
+		wished_time=( anytim(anytime) + anytim(flare_intv[1]))/2.
+		time_intv=rhessi_return_nice_intv(flare_intv, wished_time, min_wished_spin_periods=14, max_spin_periods=15)
+		pos=rhessi_find_flare_position_subprg(time_intv,LOUD=LOUD,warning=warning,eband=eband)		
+	ENDIF
+	IF N_ELEMENTS(pos) EQ 1 THEN BEGIN
+		wished_time=anytim(anytime)	
+		time_intv=rhessi_return_nice_intv(flare_intv, wished_time, min_wished_spin_periods=4, max_spin_periods=5)
+		pos=rhessi_find_flare_position_subprg(time_intv,LOUD=LOUD,warning=warning,eband=eband)		
+	ENDIF
+	IF N_ELEMENTS(pos) EQ 1 THEN BEGIN
+		wished_time=( anytim(flare_intv[0]) + anytim(anytime))/2.
+		time_intv=rhessi_return_nice_intv(flare_intv, wished_time, min_wished_spin_periods=4, max_spin_periods=5)
+		pos=rhessi_find_flare_position_subprg(time_intv,LOUD=LOUD,warning=warning,eband=eband)		
+	ENDIF
+	IF N_ELEMENTS(pos) EQ 1 THEN BEGIN
+		wished_time=( anytim(anytime) + anytim(flare_intv[1]))/2.
+		time_intv=rhessi_return_nice_intv(flare_intv, wished_time, min_wished_spin_periods=4, max_spin_periods=5)
+		pos=rhessi_find_flare_position_subprg(time_intv,LOUD=LOUD,warning=warning,eband=eband)		
+	ENDIF
+	IF N_ELEMENTS(pos) EQ 1 THEN BEGIN
+		wished_time=anytim(anytime)	
+		time_intv=rhessi_return_nice_intv(flare_intv, wished_time, min_wished_spin_periods=1, max_spin_periods=2)
+		pos=rhessi_find_flare_position_subprg(time_intv,LOUD=LOUD,warning=warning,eband=eband)		
+	ENDIF
+	; Now, I should have at least a proper time_intv (i.e., one that works...(aspect,...))
+	; If still does not work (i.e. aspect solution bad), then, I'm toast.
+	IF N_ELEMENTS(pos) NE 2 THEN BEGIN
+		IF datatype(imo) EQ 'OBJ' THEN OBJ_DESTROY,imo
+		RETURN,-2
+	ENDIF
+
+	;NOW, compare with the same, as obtained with collimator 9: if flarepos is the same within detres[7]/2, then it must be all right. 
+	;If not, use SC#7, and use democracy. If all three are wildly different (i.e. democracy rules... and fails), then we have a problem...
+	IF KEYWORD_SET(FURTHER) THEN BEGIN
+		pos2=rhessi_find_flare_position_subprg(time_intv,warning=warning,coll=8,eband=eband)
+		IF N_ELEMENTS(pos2) NE 2 THEN GOTO,THEEND		;if problem (I don't expect any, as aspect should be OK this far...!), give result of SC8
+		tmp=( (pos[0]-pos2[0])^2 + (pos[1]-pos2[1])^2 )^0.5
+		IF tmp GT detres[8]/2. THEN BEGIN
+			; SC 8 and 9 seem to indicate different positions... need to use SC7 pour les departager...
+			pos3=rhessi_find_flare_position_subprg(time_intv,warning=warning,coll=6,eband=eband)
+			IF N_ELEMENTS(pos3) NE 2 THEN GOTO,THEEND	;if problem (I don't expect any, as aspect should be OK this far...!), give result of SC8
+			dist8_9=tmp
+			dist8_7=( (pos[0]-pos3[0])^2 + (pos[1]-pos3[1])^2 )^0.5
+			dist9_7=( (pos2[0]-pos3[0])^2 + (pos2[1]-pos3[1])^2 )^0.5
+			
+			IF dist8_7 LE detres[7]/2. THEN GOTO,THEEND			
+			IF dist9_7 LE detres[8]/2. THEN BEGIN
+				pos=pos2
+				GOTO,THEEND
+			ENDIF
+
+			;if I get this far, it is because all 3 SCs give different positions... ---> return a -1 or the position of the brightest pixel in the SC#8 map...
+			warning=warning+8	;bit 4
+			IF FURTHER GT 1 THEN BEGIN
+				PRINT,' SCs 7,8,9 give different source locations ! Returning location of brightest pixel in SC#8 map'	
+				IF datatype(imo) EQ 'OBJ' THEN OBJ_DESTROY,imo
+				imo=hsi_image()
+				imo->set,time_range=time_intv,energy_band=eband
+				imo->set,image_dim=128,pixel_size=16,xyoffset=[0,0]	; just about anything should be a point source at this resolution...
+				imo->set,det_index=[0,0,0,0,0,0,0,1,0]
+				img=imo->getdata()
+				IF img[0,0] EQ -1 THEN BEGIN
+					PRINT,'....... getdata on image failed!!!'
+					RETURN,-2
+				ENDIF
+				info=imo->get()
+				ij=max2d(img)
+				x=(ij[0]-info.image_dim[0]/2)*info.pixel_size[0]
+				y=(ij[1]-info.image_dim[1]/2)*info.pixel_size[1]
+				pos=[x,y]
+				GOTO,THEEND
+			ENDIF ELSE BEGIN
+				PRINT,' SCs 7,8,9 give different source locations ! Returning -1 for flare position...'
+				PRINT,pos	;coll#8
+				PRINT,pos2	;coll#9
+				PRINT,pos3	;coll#7
+				RETURN,-1
+			ENDELSE	;// IF FURTHER GT 1
+		ENDIF	
+	ENDIF	;// IF FURTHER NE 0
+	
+
+THEEND:			
+
+IF KEYWORD_SET(REFINE) THEN BEGIN
+	IF datatype(imo) EQ 'OBJ' THEN OBJ_DESTROY,imo
+	imo=hsi_image()
+	imo->set,time_range=time_intv,energy_band=eband
+	imo->set,xyoffset=pos,pixel_size=1,image_dim=64
+	imo->set,det_index=[0,0,1,1,1,1,0,0,0]
+	img=imo->getdata()
+	IF img[0,0] EQ -1 THEN BEGIN
+		PRINT,'....... getdata on image failed!!!'
+		RETURN,pos
+	ENDIF
+	info=imo->get()
+	ij=max2d(img)
+	x=(ij[0]-info.image_dim[0]/2)*info.pixel_size[0]+info.xyoffset[0]
+	y=(ij[1]-info.image_dim[1]/2)*info.pixel_size[1]+info.xyoffset[1]
+	pos=[x,y]
+ENDIF
+
+;do something with warning flag ?
+;compare with hedc_find_flare_pos.pro ?
+IF datatype(imo) EQ 'OBJ' THEN OBJ_DESTROY,imo
+RETURN,pos
+END

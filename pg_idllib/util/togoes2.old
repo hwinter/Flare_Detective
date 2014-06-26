@@ -1,0 +1,57 @@
+;+
+; NAME:
+;   togoes
+;
+; PURPOSE:
+;   transform a flux in standard goes format    
+;
+; INPUT: 
+;   flux: goes flux in watt/m^2
+;
+;
+;
+; HISTORY:
+;   written 02-DEC-2002 by Paolo Grigis
+;   06-DEC-2002 rewritten: simplified using string formatted output                     
+;-
+
+
+FUNCTION togoes,flux
+
+
+IF flux LE 0       THEN RETURN,string(flux,'(e8.1)') ; negative flux
+IF flux GE 9.95d-3 THEN RETURN,string(flux,'(e7.1)') ; greater than X99
+IF flux LT 9.95d-9 THEN RETURN,string(flux,'(e7.1)') ; less than A1.0
+
+;The remaining fluxes needs to be converted to the GOES notation
+;problem: C9.97 needs to be simplified to M1.0!
+
+goesletter=['A','B','C','M','X']
+
+logf=floor(alog10(flux))
+
+
+IF flux LT 9.95d-4 THEN BEGIN
+
+    str=string(flux/10d^(logf),'(e7.1)')
+
+    ;print,str
+    ;print,logf
+
+    IF strmid(str,6,1) EQ 0 THEN $
+         str=goesletter[8+logf]+strmid(str,0,3) $
+    ELSE $
+         str=goesletter[9+logf]+strmid(str,0,3)
+
+ENDIF $
+ELSE BEGIN
+    IF flux GE 1d-3 THEN $
+         str='X'+strtrim(string(round(flux/10d^(logf-1))),2) $
+    ELSE $
+         str='X10'
+ENDELSE
+
+RETURN,str
+
+END
+

@@ -1,0 +1,416 @@
+;+
+; NAME:
+;      workspg
+;
+; PURPOSE: 
+;      interactive spg manipulation 
+;
+; INPUTS:
+;      inspg: a spectrogram
+;  
+; OUTPUTS:
+;      zoompar: selected part of the spectrogram
+;      backpar: selected background part
+;
+; KEYWORDS:
+;        
+;
+; HISTORY:
+;        14-OCT-2002 written
+;  up to 21-OCT-2002 added more commands & extended functionality
+;
+; AUTHOR
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;
+;-
+
+;-----------------------------------------------------------
+;mouse interval select
+;-----------------------------------------------------------
+
+FUNCTION select,xonly=xonly,yonly=yonly;
+
+;
+;keywords (x,y)only: select only an x or y interval, if they aren't
+;set an interval in both axis is returned
+;
+
+!mouse.button=0
+clicks=0
+xint=0 & yint=0
+oldx=0 & oldy=0
+
+WHILE (!mouse.button NE 4) AND (clicks LE 1) DO BEGIN
+    cursor,xint,yint,/device,/down
+    IF !mouse.button EQ 1 THEN BEGIN
+        IF clicks EQ 0 THEN BEGIN
+            oldx=xint
+            oldy=yint
+        ENDIF
+
+        clicks=clicks+1
+    ENDIF
+    ;print,clicks
+ENDWHILE
+
+;
+;position is sorted
+;
+IF oldx GT xint THEN BEGIN
+    tmp=oldx
+    oldx=xint
+    xint=tmp
+ENDIF
+IF oldy GT yint THEN BEGIN
+    tmp=oldy
+    oldy=yint
+    yint=tmp
+ENDIF
+
+;
+;output depends on keyword settings
+;
+IF keyword_set(xonly) THEN position=[oldx,xint] ELSE $
+    IF keyword_set(yonly) THEN position=[oldy,yint] ELSE $
+        position=[oldx,oldy,xint,yint]
+
+return,position
+
+END
+
+
+;-----------------------------------------------------------------
+;mouse point selection & print coordinates on the IDL command line
+;-----------------------------------------------------------------
+
+PRO pointselect,plotspg
+
+
+!mouse.button=0
+clicks=0
+xint=0 & yint=0
+
+plotx=plotspg.x
+ploty=plotspg.y
+plotim=plotspg.spectrogram
+
+WHILE (!mouse.button NE 4) DO BEGIN
+    cursor,xint,yint,/device,/down
+    IF !mouse.button EQ 1 THEN BEGIN
+        print,'Energy: ',ploty[yint],' keV'
+        print,'Time  : ',anytim(plotx[xint],/yohkoh)
+        print,'Value : ',plotim[xint,yint]
+    ENDIF
+ENDWHILE
+
+END
+
+
+;------------------------------------------------------------------
+;spectrogram draw routine
+;------------------------------------------------------------------
+
+FUNCTION spg_draw,spg,winxsize,winysize
+
+im=spg.spectrogram
+x=spg.x
+y=spg.y
+
+plotim=congrid(im,winxsize,winysize)
+plotx=congrid(x,winxsize)
+ploty=congrid(y,winysize)
+
+plotspg={spectrogram:plotim,x:plotx,y:ploty}
+
+plotimtv=alog(1+(plotim>0))
+plotimtv=255./(max(plotimtv)-min(plotimtv))*plotimtv
+tv,plotimtv
+
+;print,min(plotim)
+;print,max(plotim)
+
+return,plotspg
+
+END
+
+;------------------------------------------------------------------
+;main routine
+;------------------------------------------------------------------
+
+PRO workspg,inspg=inspg,zoompar=zoompar,backpar=backpar
+
+IF not exist(inspg) THEN BEGIN
+    print,'Input a spectrogram!'
+    return
+END
+
+winxsize=800
+winysize=600
+window,xsize=winxsize,ysize=winysize,/free
+
+zoompar=[min(inspg.x),min(inspg.y),max(inspg.x),max(inspg.y)]
+;zoompar: min time, min energy, max time, max energy
+
+backpar=[0,0,0,0]
+
+;
+;first plot of the spg
+;
+
+plotspg=spg_draw(inspg,winxsize,winysize)
+
+
+;
+;enter command mode
+;
+
+input=''
+
+WHILE (input[0] NE 'q') DO BEGIN
+
+    pos=0
+
+    print,'Commands: q -quits t -select time interval s: select energy & time range'
+    print,'c -print coordinates of the point z -zoom u -unzoom b -background subtraction '
+    print,'n -no background subtraction o -background subtraction time only'
+    
+    print,'my -manual zoom (y axis only) i -print info about spg'
+
+    print,'v -plot vertical slice h: -plot horizntal slice'
+    
+    read,'>',input
+    CASE input[0] OF
+                                ;quit
+        'q' : print,'quitting...'
+
+                                ;select time interval
+        't' : BEGIN
+            pos=select(/xonly)
+            IF total(pos) GT 0 THEN $
+              print,anytim([plotspg.x[pos[0]],plotspg.x[pos[1]]],$
+                           /yohkoh) $
+            ELSE print,'No interval selected'              
+        END
+
+                                ;select energy & time interval
+        's' : BEGIN
+            pos=select()
+            IF total(pos) GT 0 THEN BEGIN
+                print,'Energy: ',plotspg.y[pos[1]],' - ',$
+                      plotspg.y[pos[3]],' keV'
+                print,anytim([plotspg.x[pos[0]],plotspg.x[pos[1]]],$
+                             /yohkoh)
+            ENDIF ELSE print,'No interval selected'              
+        END
+        
+                                ;print coordinates
+        'c' : pointselect,plotspg
+
+                                ;zoom
+        'z' : BEGIN
+            pos=select()
+            IF total(pos) GT 0 THEN BEGIN
+                zoompar=[plotspg.x[pos[0]],plotspg.y[pos[1]],$
+                         plotspg.x[pos[2]],plotspg.y[pos[3]]]
+                
+                spg=inspg
+                IF total(backpar) GT 0 THEN $
+                  spg=hsi_background_subtract(timerange=[backpar[0],backpar[2]],$
+                                              erange=[backpar[1],backpar[3]],$
+                                              spg=inspg)                
+                
+                spg=hsi_spg_reduce(timerange=[zoompar[0],zoompar[2]],$
+                                   erange=[zoompar[1],zoompar[3]],spg=spg)
+
+                plotspg=spg_draw(spg,winxsize,winysize)
+                
+
+            ENDIF ELSE print,'No interval selected'              
+
+        END
+
+                                ;unzoom
+        'u' : BEGIN
+
+            zoompar=[min(inspg.x),min(inspg.y),max(inspg.x),max(inspg.y)]
+
+            spg=inspg
+            IF total(backpar) GT 0 THEN $
+              spg=hsi_background_subtract(timerange=[backpar[0],backpar[2]]$
+                                          ,erange=[backpar[1],backpar[3]]$
+                                          ,spg=spg)
+
+            spg=hsi_spg_reduce(timerange=[zoompar[0],zoompar[2]]$
+                               ,erange=[zoompar[1],zoompar[3]],spg=spg)
+
+            plotspg=spg_draw(spg,winxsize,winysize)
+            
+        END  
+        
+                                ;no background sub
+        'n' : BEGIN
+
+            spg=hsi_spg_reduce(timerange=[zoompar[0],zoompar[2]]$
+                               ,erange=[zoompar[1],zoompar[3]],spg=inspg)
+
+            plotspg=spg_draw(spg,winxsize,winysize)
+            
+            backpar=[0,0,0,0]
+            
+        END    
+
+                                ;background subtraction time only
+        'o' : BEGIN
+            pos=select(/xonly)
+
+            IF total(pos) GT 0 THEN BEGIN
+                
+                backpar=[plotspg.x[pos[0]],min(inspg.y),plotspg.x[pos[1]],max(inspg.y)]
+
+                spg=hsi_background_subtract(timerange=[backpar[0],backpar[2]]$
+                                            ,erange=[backpar[1],backpar[3]]$
+                                            ,spg=inspg)                
+                
+                spg=hsi_spg_reduce(timerange=[zoompar[0],zoompar[2]],$
+                                   erange=[zoompar[1],zoompar[3]],spg=spg)
+
+                plotspg=spg_draw(spg,winxsize,winysize)
+                
+            ENDIF $
+            ELSE print,'No interval selected'     
+        END
+
+        'b' : BEGIN
+            pos=select()
+
+            IF total(pos) GT 0 THEN BEGIN
+                
+                backpar=[plotspg.x[pos[0]],plotspg.y[pos[1]],$
+                         plotspg.x[pos[2]],plotspg.y[pos[3]]]
+                
+                spg=hsi_background_subtract(timerange=[backpar[0],backpar[2]],$
+                                            erange=[backpar[1],backpar[3]],$
+                                            spg=inspg)
+
+                spg=hsi_spg_reduce(timerange=[zoompar[0],zoompar[2]],$
+                                   erange=[zoompar[1],zoompar[3]],spg=spg)
+
+                plotspg=spg_draw(spg,winxsize,winysize)
+                
+            ENDIF $
+            ELSE print,'No interval selected'     
+        END
+                                ;manual (y) zoom
+        'm'  : BEGIN
+            print,'Low energy range (keV):'
+            read,len
+            print,'High energy range (keV):'
+            read,hen
+
+            zoompar[1]=[len]
+            zoompar[3]=[hen]
+            
+            spg=inspg
+            IF total(backpar) GT 0 THEN $
+              spg=hsi_background_subtract(timerange=[backpar[0],backpar[2]],$
+                                          erange=[backpar[1],backpar[3]],$
+                                          spg=inspg)                
+            
+            spg=hsi_spg_reduce(timerange=[zoompar[0],zoompar[2]],$
+                               erange=[zoompar[1],zoompar[3]],spg=spg)
+
+            plotspg=spg_draw(spg,winxsize,winysize)
+            
+
+        END
+
+                                ;print info
+        'i'  : BEGIN
+
+            print,'Segment used : '+hsi_seg2str(inspg.segment)
+            print,'Time interval: '+anytim(min(inspg.x),/yohkoh)+' - '$
+                  +anytim(max(inspg.x),/yohkoh)
+
+        END
+
+                                ;plot vertical slice
+        'v'  : BEGIN
+
+            spgwin=!D.WINDOW
+            window,xsize=600,ysize=400,/free
+            pwin=!D.WINDOW
+            wset,spgwin
+            
+            !mouse.button=0
+            clicks=0
+            xint=0 & yint=0
+
+            plotx=plotspg.x
+            ploty=plotspg.y
+            plotim=plotspg.spectrogram
+
+            WHILE (!mouse.button NE 4) DO BEGIN
+                cursor,xint,yint,/device,/down
+                IF !mouse.button NE 0 THEN BEGIN
+                    wset,pwin
+                    plot,ploty,plotim[xint,*],yrange=[0.1,max(plotim[xint,*])] $
+                         ,/ylog,xrange=[zoompar[1],zoompar[3]],/xlog,xstyle=1
+                    wset,spgwin
+                ENDIF
+            ENDWHILE
+
+            wdelete,pwin
+            
+        END
+
+
+                               ;plot horizontal slice
+        'h'  : BEGIN
+
+            spgwin=!D.WINDOW
+            window,xsize=600,ysize=400,/free
+            pwin=!D.WINDOW
+            wset,spgwin
+            
+            !mouse.button=0
+            clicks=0
+            xint=0 & yint=0
+
+            plotx=plotspg.x
+            ploty=plotspg.y
+            plotim=plotspg.spectrogram
+
+            WHILE (!mouse.button NE 4) DO BEGIN
+                cursor,xint,yint,/device,/down
+                IF !mouse.button NE 0 THEN BEGIN
+                    wset,pwin
+                    utplot,plotx,plotim[*,yint],yrange=[0.1,max(plotim[*,yint])] $
+                         ,timerange=anytim([zoompar[0],zoompar[2]],/yohkoh),/ylog,xstyle=1
+
+                    wset,spgwin
+                ENDIF
+            ENDWHILE
+            clear_utplot
+            wdelete,pwin
+            
+        END
+
+
+
+
+
+        
+        ELSE : print,'this is not a valid command, try again. press ''q'' to quit'
+
+    ENDCASE
+    
+ENDWHILE
+
+END
+
+
+
+
+
+
+

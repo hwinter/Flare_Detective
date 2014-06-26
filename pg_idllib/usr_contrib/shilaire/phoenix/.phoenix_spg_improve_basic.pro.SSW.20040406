@@ -1,0 +1,143 @@
+;+
+;NAME:
+; 	phoenix_spg_autoimprove.pro
+;PROJECT:
+; 	ETHZ Radio Astronomy
+;CATEGORY:
+; 	Utility
+;PURPOSE:
+;	Most of this data processing was designed for I/L1/L2, not polarization data...
+;
+;CALLING SEQUENCE:
+;
+;INPUT:
+;
+;
+;OPTIONAL INPUT:
+;	
+;
+;KEYWORD INPUT:
+;	/ELIM: if set, will automatically remove bad channels
+;	/DESPIKE : if set, will use phoenix_despike.pro on the spectrogram. CAUTION: radio 'spikes' would surely be removed...
+;	BACK: if set, will automatically remove background 
+;			if set to 1 (/BACK): will take the least 3% of the data as background
+;			if set to a single number (ex: 0.05): is the least fraction of the data to be considered as background (/BACK or BACK=0.03 does the same)
+;			if set to a 2-element array, assumes those are ANYTIM time intervals to be taken as background
+;	/LOG: it is conceptually better to work on linear SFU data for most of the data processing, THEN `log' it via this keyword.
+;
+;OUTPUT:
+;
+;KEYWORD OUTPUT:
+;	avgback: array of averaged background values for each frequencies. Useful only if the BACK keyword has also been used!
+;
+;RESTRICTIONS:
+;
+;EXAMPLES:
+;	time_intv='2003/09/03 '+['10:16','10:20']
+;	spg_o=phoenix_spg_get(time_intv,/DECOMPRESS)
+;	new_spg_o=phoenix_spg_improve_basic(spg_o,/ELIM,/BACK,/DESPIKE,/LOG)
+;	LOADCT,5
+;	spectro_plot,new_spg_o.spg,new_spg_o.time,new_spg_o.freq
+;
+;HISTORY:
+;+
+;NAME:
+;	phoenix_spg_improve_basic.pro
+;
+;PROJECT:
+;	PHOENIX-2, ETHZ
+;
+;CATEGORY:
+;	Spectrogram data processing
+;
+;PURPOSE:
+;	Radio spectrogram basic improvement routine. 
+;	Not really suited for polarization data.
+;
+;CALLING SEQUENCE:
+;	new_spg_struct=phoenix_spg_improve_basic(spg_struct, ELIM=ELIM, BACK=BACK, DESPIKE=DESPIKE, LOG=LOG, avgbackgnd=backavg)
+;
+;INPUT:
+; 	spg_struct: spectrogram structure (as ouput by phoenix_spg_get.pro)
+;		Should be in linear scale (although this routine's basic data processing seem to work well enough on LOG data...).
+;
+;OUTPUT:
+;	The processed spectrogram structure.
+;
+;KEYWORDS:
+;	/ELIM: automatically eliminates bad channels (i.e. frequencies)
+;
+;	BACK: background subtraction.
+;		If single float (ex: 0.05): takes this fraction of the whole spectrogram as background. The least values of each channel are taken.
+;		If set to 1: same as using 0.03
+;		If a 2-d array: assumes this is an anytim-compatible time interval which will be used as background time.
+;
+;	/DESPIKE: uses phoenix_despike.pro routine (originally same as tracedespike.pro).
+;
+;	/LOG: will LOG the output in a manner consistant with the way Phoenix data is usually compressed.
+;
+; OUTPUT KEYWORDS:
+;	avgbackgnd: an array (with same dimension as the number of channels/frequencies) containing the background values.
+;			Only use if the BACK keyword was also used!
+;
+; EXAMPLE:
+;	spg=phoenix_spg_get('2003/01/01 '+['10:05','10:20'],/DECOMPRESS)
+;	spg1=phoenix_spg_improve_basic(spg_stc, /ELIM, /BACK, /DESPIKE, /LOG)
+;	LOADCT,5
+;	spectro_plot,spg1
+;
+;
+;HISTORY:
+; 	2003/10/08: Pascal Saint-Hilaire, shilaire@astro.phys.ethz.ch
+;	
+;-
+
+;===================================================================================================================================================================================================================
+PRO phoenix_elimwrong, image, xaxis, yaxis 
+ print, "Eliminating wrong channels"
+ image_old = image
+ xaxis_old = xaxis
+ yaxis_old = yaxis
+ ElimWrongChannels, image, xaxis, yaxis
+ if n_elements(image[0,*]) le 1 then begin 
+    print, "Restoring original image"
+    image = image_old
+    xaxis = xaxis_old
+    yaxis = yaxis_old
+ endif
+END
+;===================================================================================================================================================================================================================
+FUNCTION phoenix_spg_improve_basic, spgo, ELIM=ELIM, BACK=BACK, DESPIKE=DESPIKE, LOG=LOG,	$
+			avgbackgnd=backavg
+	
+	IF have_tag(spgo,'type') THEN IF spgo.type EQ 'P' THEN PRINT,'WARNING!: phoenix_spg_improve_basic.pro not designed to deal properly with polarization data...'
+	
+	image=spgo.spectrogram
+	xaxis=spgo.x
+	yaxis=spgo.y
+	
+	; if a backgnd time interval was entered, should be looked into BEFORE removing bad channels, in order to be sure one has the same freq. channels...
+	IF N_ELEMENTS(BACK) EQ 2 THEN BEGIN
+		backspgo=phoenix_spg_get(BACK)
+		backavg = avg(backspgo.spg,0)
+		FOR i=0,N_ELEMENTS(image[0,*])-1 DO image[*,i]=image[*,i]-backavg[i]
+	ENDIF
+
+	IF KEYWORD_SET(ELIM) THEN phoenix_elimwrong, image, xaxis, yaxis
+
+	IF N_ELEMENTS(BACK) EQ 1 THEN BEGIN
+		IF BACK EQ 1 THEN BACK=0.03
+		image = constbacksub(image, 0, n_elements(image[*,0])-1,'X', automatic=BACK, background=backavg )
+	ENDIF
+		
+	IF KEYWORD_SET(DESPIKE) THEN image=phoenix_despike(image)
+
+	IF KEYWORD_SET(LOG) THEN BEGIN
+		image=45*alog( (image > (-9.)) +10.)
+		IF exist(BACK) THEN backavg=45*alog( (backavg > (-9.)) +10.)
+	ENDIF
+	
+	;RETURN,{spg:image, time:xaxis, freq:yaxis}
+	RETURN,{spectrogram:image, x:xaxis, y:yaxis}
+END
+;===================================================================================================================================================================================================================

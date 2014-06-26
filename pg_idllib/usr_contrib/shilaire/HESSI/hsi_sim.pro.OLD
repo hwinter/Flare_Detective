@@ -1,0 +1,69 @@
+; remove_path,'atest'
+
+simo = hsi_image() 
+
+gg = {gaussian_source_str} 
+gg.amplitude = 1.0 
+gg.xysigma = [5.,5.] 
+gg.xypos = [20.,10.] 
+gg.tilt_angle_deg = 0. 
+im = simo -> getdata(/plot,sim_model=gg) 
+
+simo->set,det_index=[0,0,1,0,0,0,0,0,0]
+
+simo ->set, sim_model=model,sim_photons_per_coll=50000,  $
+	sim_pixel_size=1, pixel_size=1, 	$
+	energy_band=[12.,25.] ,			$
+	sim_image_dim=128, image_dim=128
+
+simo->plot,charsize=1.2
+END
+
+;==========================================================
+model=fltarr(64,64) 
+model[10,20]=1.0 
+model[30,12]=1.0 
+model[15,40]=1.0 
+simo = hsi_image() 
+simo->set,sim_model=model
+simo->plot,charsize=1.2
+;==========================================================
+
+; binned event list:
+
+be = obj_im -> getdata(class_name='hsi_binned_eventlist')
+help, be 
+;be         POINTER  = Array[9,3] 
+
+;The array of pointers refers to the 9 collimators and the 3 useful harmonics (at this time only the first harmonic is used).  These pointers refer to structures which contain the eventlist.  For example, to
+;examine the eventlist structure for the first harmonic of the first collimator, simply type: 
+
+;IDL> help, /structure, *be[0,0] or  help, /st, (*be[0,0])[0] ...
+;** Structure HSI_TIME_BIN, 3 tags, length=12: 
+;   TIME            LONG               512 
+;   COUNT           LONG                16 
+;   LIVETIME        FLOAT           1.00000 
+;
+;You can then plot the counts versus time in the binned eventlist for this collimator by typing: 
+;
+;
+; 
+coll=8;
+plot, (*be[coll,0]).time /(2.^20.), (*be[coll,0]).count 
+;
+PRINT,MAX((*be[coll,0]).count)
+PRINT,MIN((*be[coll,0]).count)
+PRINT,MEAN((*be[coll,0]).count)
+PRINT,STDDEV((*be[coll,0]).count)
+;
+res=[2.3,3.9,6.9,11.9,20.7,35.9,62.1,107.,186.]
+y=FLTARR(9)
+;FOR coll=0,8 DO BEGIN y[coll]=(MAX((*be[coll,0]).count) - MIN((*be[coll,0]).count))/MAX((*be[coll,0]).count)
+FOR coll=0,8 DO BEGIN y[coll]=(MAX((*be[coll,0]).count) - MIN((*be[coll,0]).count))
+plot,1./res,y
+;plot,1./res^2,alog(y)
+;
+;=======================================================================================================================================================================================================================================  
+
+
+

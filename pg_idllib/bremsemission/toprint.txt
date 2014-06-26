@@ -1,0 +1,434 @@
+;+
+; NAME:
+;      pg_brem_genbh
+;
+; PURPOSE: 
+;      returns the full bremsstralung cross section 3BN from Koch &
+;      Motz (Rev. Mod. Phys. 31,4,920 (1959)), that is, the
+;      relativistic Bethe-Heitler formula from Bethe & Heitler,
+;      Proc. Roy. Soc. A146, 83 (1934) with the Elwert correction
+;      factor (Elwert, Ann. Phys. 34, 178 (1039). 
+;      This is ok for low Z elements, shown by Pratt & Tseng
+;      Phys. Rev. A11,1797 (1975) [numerical solution of the
+;      Dirac equation]. The cross section returned is differential
+;      in photon energy and has the units cm^-2 keV^-1   
+;
+; CALLING SEQUENCE:
+;      cross_sec=f_brem_genbh(phe,ele,z)
+;
+; INPUTS:
+;      phe: photon energy in keV, only one value allowed
+;           (if array is put in, then the 0th element is taken)
+;      ele: electron energy in keV, can be an array
+;      z: average atomic number in target (default: 1.)
+;
+; KEYWORDS:
+;      nonrelativistic: if set, computes the nonrelativistic 
+;      approximation (formula 3BN(a)) from Koch & Motz
+;      ultrarelativistic: if set, computes the ultrarelativistic approximation (
+;      formula 3BN(b)) from K&M
+;
+;      justborn: if set, does not use the Elwert correction
+;      factor (that is, just the born approx is used)
+;
+; OUTPUT:
+;      cross section differential in photon energy in cm^2
+;       
+;
+; COMMENT:
+;      see also Haug, A&A 326,417 (1997)
+;
+; EXAMPLE   
+;
+;
+;
+; VERSION:
+;       20-OCT-2005 written PG
+;       11-SEP-2006 added ultrarel. keyword PG
+;       
+; AUTHOR:
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;       pgrigis@astro.phys.ethz.ch
+;-
+
+FUNCTION pg_brem_genbh,phe,ele,z,nonrelativistic=nonrelativistic $
+                      ,justborn=justborn,brownapprox=brownapprox $
+                      ,ultrarelativistic=ultrarelativistic
+
+z=fcheck(z,1d); default mean atomic number: 1
+
+mc2   = 510.998918d ;rest mass of the electron, in keV
+alpha = 7.297352568d-3 ;fine structure constant, dimensionless
+
+;elrad = 2.817940325e-13; classical electron radius, in cm
+elrad2 = 7.9407879d-26; classical electron radius squared, in cm^2
+
+ans=0d *ele
+ind=where(ele GT phe[0],count)
+
+IF count GT 0 THEN BEGIN 
+
+   ekel=ele[ind]/mc2 ;electron kinetic energy ekel
+   k=phe[0]/mc2      ;photon energy k, just one value
+
+   E0	= 1d + ekel             ; total electron energy before the collision, in mc^2 units
+   p0	= sqrt(E0*E0-1d)         ; electron momentum before, in mc units
+   E1	= E0 - k                ; total electron energy after the collision
+   p1	= sqrt(E1*E1-1d)         ; electron momentum after
+
+   IF keyword_set(brownapprox) THEN BEGIN
+
+      ;non relativistic approx as used by Brown (1971)
+      ;it is not identical to K&M 3BN(a) in order (E/mc^2)^2
+      ;but since this is the non-relativistic approximation anyway
+      ;this is fine, however here we distinguish between the two
+      cross=1/ekel/k*8./3.*alog((1+sqrt(1-phe[0]/ele[ind]))/(1-sqrt(1-phe[0]/ele[ind])))
+
+   ENDIF ELSE BEGIN  
+
+      IF keyword_set(ultrarelativistic) THEN BEGIN
+
+         E1ovE0=E1/E0
+
+         ;K&M 3BN(a), non-relativistic approximation
+         cross=4d/k*(1+E1ovE0*E1ovE0-2./3.*E1ovE0)*(alog(2*E0*E1/k)-0.5d)
+
+      ENDIF ELSE BEGIN  
+
+      IF NOT keyword_set(nonrelativistic) THEN BEGIN 
+
+         ;full K&M 3BN (relativistic Bethe-Heitler)
+
+         ;numerical factors
+         a1=4d /3
+         a2=8d /3
+
+         ;often used products & quotients
+         e0e1   = e0*e1
+         p0p1   = p0*p1
+         p0p1inv= 1d/p0p1
+         p1p1   = p1*p1
+         p0p0   = p0*p0
+         p03inv = 1d /(p0p0*p0)
+         p13inv = 1d /(p1p1*p1)
+         p4inv  = p0p1inv*p0p1inv
+
+         eps0=alog((e0+p0)/(e0-p0))
+         eps1=alog((e1+p1)/(e1-p1))
+
+         fact2=eps0*p03inv*(e0e1+p0p0)-eps1*p13inv*(e0e1+p1p1)+2d *k*e0e1*p4inv
+         fact1=a2*e0e1*p0p1inv+k*k*(e0e1*e0e1+p0p0*p1p1)*p03inv*p13inv+0.5d *k*p0p1inv*fact2
+
+         L=2d *alog((e0e1+p0p1-1d)/k)
+
+         cross=a1-2*e0e1*(p0p0+p1p1)*p4inv+eps0*e1*p03inv+eps1*e0*p13inv-eps0*eps1*p0p1inv+L*fact1
+
+         cross=cross*p1/(p0*k)
+
+      ENDIF ELSE BEGIN 
+         
+         ;K&M 3BN(a), non-relativistic approximation
+         cross=(16d /3)/(k*p0*p0)* alog((p0+p1)/(p0-p1))
+
+      ENDELSE
+      ENDELSE 
+
+   ENDELSE
+
+
+   ;elwert factor computation
+   ;if used, makes born approximation ok for the limit of
+   ;scattered electron energy --> 0
+   IF NOT keyword_set(justborn) THEN BEGIN
+
+      elwert=(E1*p0)/(E0*p1)*(1-exp(-Z*alpha*2*!DPi*E0/p0))/(1-exp(-Z*alpha*2*!DPi*E1/p1))
+
+   ENDIF ELSE BEGIN 
+
+      elwert=1d
+
+   ENDELSE
+
+   ;final division by mc2 needed in order to get the cross
+   ;section in units of cm ^-2 keV^-1 instead of cm^2
+   ans[ind]=cross*elwert*z*z*alpha*elrad2/mc2
+
+ENDIF
+
+RETURN,ans
+
+END
+;+
+; NAME:
+;      pg_eloss
+;
+; PURPOSE: 
+;      return the electron energy loss cross section (for collisions
+;      with other electrons). Two versions: 1) non relativistic
+;      2) relativistic by using Bethe-Bloch
+;      The quantity returned is sigma*E=(dE/dt)/(n_traget*v(E))=(dE/dx)/n_target 
+;
+; INPUTS:
+;      ele: electron energy in keV, can be an array
+;      coulomblog: the coulomb logarithm
+;
+; KEYWORDS:
+;      
+;
+; OUTPUT:
+;      cross section differential in electron energy in cm^2
+;       
+;
+; COMMENT:
+;      
+;
+; EXAMPLE   
+;
+;
+;
+; VERSION:
+;       11-NOV-2005 written PG
+;       
+; AUTHOR:
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;-
+
+FUNCTION pg_eloss,ele,coulomblog=coulomblog,relativistic=relativistic
+
+coulomblog=fcheck(coulomblog,20)
+
+;elcharge=4.8032044d-10;electron charge in statcoulombs/esu (1C=2.998*10^9 statc)
+;kev=1.60217653d-9;value of 1 kev in ergs
+;C=2*!Dpi*elcharge^4/kev^2
+C=1.30282d-19
+
+IF NOT keyword_set(relativistic) THEN BEGIN 
+   sigma=C*coulomblog/ele
+ENDIF ELSE BEGIN 
+   mc2   = 510.998918d ;rest mass of the electron, in keV
+   gamma=1d +ele/mc2
+   betasq=1d - 1d /(gamma*gamma)
+   sigma=C*(coulomblog+alog(gamma*gamma)-betasq)/(betasq*mc2*0.5)
+ENDELSE
+
+
+RETURN,sigma
+
+END
+;+
+; NAME:
+;      pg_el2phot_thin
+;
+; PURPOSE: 
+;      Transform an input electron spectrum flux (el. s^-1 cm^-2
+;      keV^-1) given as an array of values for a discrete set of
+;      energies into an emitted photon spectrum in units of
+;      photons s^-1 cm^-3 keV^-1.
+;      This correspond to the so-called "thin-target" emission.
+;
+; CALLING SEQUENCE:
+;      photsp=pg_el2phot_thin(elsp=elsp,ele=ele,phe=phe,z=z [optional keywords])
+;
+; INPUTS:
+;      elsp: array of N elements with the electron spectrum
+;      ele:  array of N elements with the elctron energies
+;      phe:  array of M elements with the desired photon energies
+;      z:    mean atomic number in target
+;
+; KEYWORDS:
+;      
+;
+; OUTPUT:
+;      photsp: photon spectrum at energies eph
+;       
+;
+; COMMENT:
+;
+;
+; EXAMPLE   
+;
+;
+;
+; VERSION:
+;       17-OCT-2005 written PG
+;       31-OCT-2005 added physical normalization constants
+;       07-NOV-2005 changed integration scheme to faster and
+;                   more robust routine pg_inttab
+;       14-NOV-2005 definitive version 1.0, el density spectrum allowed
+;       
+; AUTHOR:
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;-
+
+FUNCTION pg_el2phot_thin,elsp=elsp,ele=ele,phe=phe,z=z $
+  ,distance=distance,volumetar=volumetar,densitytar=densitytar $
+  ,coulomblog=coulomblog,eldensity=eldensity,_extra=_extra
+
+;for the thin target situation, the coulomb logarithm
+;is irrelevent. However, the keyword coulomblog
+;is allowed, but ignored, such that formally
+;one can call pg_el2phot_thin & pg_el2phot_thick with the same
+;syntax
+
+;check inputs & set default values if needed
+volumetar=fcheck(volumetar,1d27);target volume in cm^3
+densitytar=fcheck(densitytar,1d10);target denisty, ions cm^-3
+distance=fcheck(distance,1.496d13);distance from source, default: 1 AU
+z=fcheck(z,1.)
+
+mc2   = 510.998918d ;rest mass of the electron, in keV
+c=2.99792458d10;speed of light
+
+
+IF keyword_set(eldensity) THEN BEGIN 
+   gamma=1d +ele/mc2
+   beta=sqrt(1d -1d /(gamma*gamma))
+   elspflux=elsp*c*beta
+ENDIF $
+ELSE BEGIN 
+   elspflux=elsp
+ENDELSE 
+
+
+nph=n_elements(phe)
+photsp=dblarr(nph)
+
+IF max(phe) GE 0.5*max(ele) THEN BEGIN 
+   print,'To get meaningful results out of this routine one should'
+   print,'have that the max electron energy is larger than at least'
+   print,'twice the max photon energy!'
+   RETURN,-1
+ENDIF
+
+brem_cross='pg_brem_genbh'
+
+;loops over photon energies, needed beacuse of the cross section
+;and integration thereof
+FOR i=0,nph-1 DO BEGIN 
+
+   xin=ele
+   yin=elspflux*call_function(brem_cross,phe[i],ele,z,_extra=_extra)
+   photsp[i]=pg_tabint(xin,yin)
+
+ENDFOR 
+
+
+RETURN,photsp*volumetar*densitytar/(4*!DPi*distance*distance)
+
+END
+
+;+
+; NAME:
+;      pg_el2phot_thick
+;
+; PURPOSE: 
+;      Transform an input injected electron spectrum flux (el. s^-1
+;      cm^-2 keV^-1) given as an array of values for a discrete set
+;      of energies into an emitted photon spectrum in units of
+;      photons s^-1 cm^-3 keV^-1 
+;      This correspond to the so-called "thick-target" emission,
+;      where (non-relativistic) collisional energy losses are assumed.
+;
+; CALLING SEQUENCE:
+;      photsp=pg_el2phot_thin(elsp=elsp,ele=ele,phe=phe [optional keywords?])
+;
+; INPUTS:
+;      elsp: array of N elements with the electron spectrum
+;      ele:  array of N elements with the elctron energies
+;      phe:  array of M elements with the desired photon energies
+;
+; KEYWORDS:
+;      eldensity: if set, multiply the input electron spectrum 
+;                 with the electron speed to get the flux spectrum
+;
+; OUTPUT:
+;      photsp: photon spectrum at nergies eph
+;       
+;
+; COMMENT:
+;
+;
+; EXAMPLE:   
+;
+;
+; VERSION:
+;       18-OCT-2005 written PG
+;       ... many changes
+;       14-NOV-2005 definitive version 1.0
+;       
+; AUTHOR:
+;       Paolo Grigis, Institute for Astronomy, ETH, Zurich
+;-
+
+
+
+FUNCTION pg_el2phot_thick,elsp=elsp,ele=ele,phe=phe,z=z $
+  ,distance=distance,volumetar=volumetar,densitytar=densitytar $
+  ,coulomblog=coulomblog,surfacetar=surfacetar,_extra=_extra $
+  ,elossrel=elossrel,eldensity=eldensity
+
+
+;check inputs & set default values if needed
+
+;volume not needed --> surface needed
+;volumetar=fcheck(volumetar,1d27);target volume in cm^3
+surfacetar=fcheck(surfacetar,1d18);target surface in cm^2
+
+;for the thick target situation, the target density
+;is irrelevent. However, the keyword densitytar
+;is allowed, but ignored, such that formally
+;one can call pg_el2phot_thin & pg_el2phot_thick with the same
+;syntax
+;densitytar=fcheck(densitytar,1d10);target density, ions cm^-3
+distance=fcheck(distance,1.496d13);distance from source, default: 1 AU
+coulomblog=fcheck(coulomblog,20);coulomb logarithm
+z=fcheck(z,1.);average atomic number in target
+
+mc2   = 510.998918d ;rest mass of the electron, in keV
+elcharge=4.8032044d-10;electron charge in statcoulombs/esu (1C=2.998*10^9 statc)
+c=2.99792458d10;speed of light
+
+IF keyword_set(eldensity) THEN BEGIN 
+   gamma=1d +ele/mc2
+   beta=sqrt(1d -1d /(gamma*gamma))
+   elspflux=elsp*c*beta
+ENDIF $
+ELSE BEGIN 
+   elspflux=elsp
+ENDELSE 
+
+
+nph=n_elements(phe)
+photsp=dblarr(nph)
+
+IF max(phe) GE 0.5*max(ele) THEN BEGIN 
+   print,'To get meaningful results out of this routine one should'
+   print,'have that the max electron energy is larger than at least'
+   print,'twice the max photon energy!'
+   RETURN,-1
+ENDIF
+
+;brem_cross='pg_brem_genbh'
+;eloss_cross='pg_eloss'
+
+;get integrated spectrum: elspbar
+dummy=pg_tabint(ele,elspflux,z=elspbar,/cumulative)
+
+
+;loops over photon energies, needed because of the cross section
+;and integration thereof
+FOR i=0,nph-1 DO BEGIN 
+
+   xin=ele
+   yin=elspbar*pg_brem_genbh(phe[i],ele,z,_extra=_extra)/ $
+       (pg_eloss(ele,coulomblog=coulomblog,relativistic=elossrel))
+   photsp[i]=pg_tabint(xin,yin)
+
+ENDFOR 
+
+;add physical factors
+RETURN,photsp*(surfacetar/(4d*!DPi*distance*distance))
+
+END
+
+

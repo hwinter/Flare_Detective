@@ -1,0 +1,131 @@
+;+
+; NAME:
+;
+; pg_spfitfile2spg
+;
+; PURPOSE:
+;
+; read a spectrum fits file as written by RHESSI spectrum object using
+; the fitswrite method
+;
+; CATEGORY:
+;
+; rhessi spectrograms util
+;
+; CALLING SEQUENCE:
+;
+; spg=pg_spfitfile2spg(filename)
+;
+; INPUTS:
+;
+; filename: name of the RHESSI spectrum fits file
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+; edges: if set, energy edges instead of averages are returned
+;
+; OUTPUTS:
+;
+; spg: a spectrogram structure
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; AUTHOR:
+; Paolo Grigis, Institute for Astronomy, ETH Zurich
+; pgrigis@astro.phys.ethz.ch 
+;
+; MODIFICATION HISTORY:
+;
+; 26-MAR-2004 pg written
+; 03-FEB-2004 pg changed routine to accomodate for tag name change in sp
+;             files
+; 13-APR-2005 pg added keyword for new method (time format changed!)
+; 31-OCT-2006 pg added error keyword
+; 06-NOV-2006 pg added filter keyword
+;-
+
+FUNCTION pg_spfitfile2spg,filename,edges=edges,new=new,error=error,filter=filter
+
+IF NOT file_exist(filename) THEN BEGIN
+   print,'The file '+filename+' does not exist!'
+   RETURN,-1
+ENDIF
+
+;read the spectrogram & time structure
+data1=mrdfits(filename,1,header1)
+
+IF keyword_set(filter) THEN BEGIN 
+   data3=mrdfits(filename,3,header3)
+   filter_state=data3.INTERVAL_ATTEN_STATE$$STATE
+   filter_uncert=data3.INTERVAL_ATTEN_STATE$$UNCERTAIN
+ENDIF
+
+
+
+spectrogram=transpose(data1.rate)
+errspectrogram=transpose(data1.(1))
+
+
+IF NOT keyword_set(new) THEN BEGIN 
+
+;convert time from modified julian date...
+time_arr=data1.time
+anyt_arr=replicate({mjd:0L,time:0L},n_elements(time_arr))
+
+anyt_arr.mjd=floor(time_arr)
+anyt_arr.time=(time_arr-floor(time_arr))*3600L*24L*1000L
+
+x=anytim(anyt_arr); final time in anytim format
+
+ENDIF ELSE BEGIN
+
+   hstc=head2stc(header1)
+   x= mjd2any(double(hstc.mjdref)+double(hstc.timezero))+ data1[*].time
+
+ENDELSE
+
+
+
+data2=mrdfits(filename,2)
+edgess=transpose([[data2.e_min],[data2.e_max]])
+
+IF keyword_set(edges) THEN yy=edgess ELSE edge_products,edgess,mean=yy
+
+if keyword_set(error) then $
+  spg={spectrogram:spectrogram,espectrogram:errspectrogram,x:x,y:yy} $
+else spg={spectrogram:spectrogram,x:x,y:yy}
+
+IF keyword_set(filter) THEN BEGIN 
+   spg=add_tag(spg,filter_state,'filter_state')
+   spg=add_tag(spg,filter_uncert,'filter_uncert')
+ENDIF
+
+RETURN,spg
+
+END

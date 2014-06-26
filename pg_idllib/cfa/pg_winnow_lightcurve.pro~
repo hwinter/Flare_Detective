@@ -1,0 +1,113 @@
+;+
+; NAME:
+;
+; pg_winnow_lightcurve
+;
+; PURPOSE:
+;
+; From an input function given by two vectors x,y, returns an input constructed
+; in the following way: the highest point is selected. From there, propgating
+; both left and right, points that are closer in y than threshold are removed.
+; If a point outside the threshold is found, this becomes the new basis for the
+; threshold. The process continues untill all the array is winnowed.
+;
+; CATEGORY:
+;
+;
+;
+; CALLING SEQUENCE:
+;
+;
+;
+; INPUTS:
+;
+;
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+;
+;
+; OUTPUTS:
+;
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;
+;
+;
+; EXAMPLE:
+;
+;
+;
+; MODIFICATION HISTORY:
+;
+;-
+
+PRO pg_winnow_lightcurve,x,y,threshold=threshold,xout=xout,yout=yout
+
+IF n_elements(threshold) EQ 0 THEN threshold=1
+
+nx=n_elements(x)
+ny=n_elements(y)
+
+IF nx NE ny OR nx EQ 0 THEN RETURN 
+
+ymax=max(y,index)
+IF index EQ 0 THEN left=0 ELSE left=1
+IF index EQ nx-1 THEN right=0 ELSE right=1
+
+xout=x[index]
+yout=y[index]
+
+yt=ymax
+
+IF left EQ 1 THEN BEGIN 
+   i=index-1
+   WHILE i GE 0 DO BEGIN 
+      IF abs(y[i]-yt) GT threshold THEN BEGIN 
+         yt=y[i]
+         xout=[x[i],xout]
+         yout=[yt,yout]
+      ENDIF 
+      i--
+   ENDWHILE
+ENDIF
+
+yt=ymax
+
+IF right EQ 1 THEN BEGIN 
+   i=index+1
+   WHILE i LT nx DO BEGIN 
+      IF abs(y[i]-yt) GT threshold THEN BEGIN 
+         yt=y[i]
+         xout=[xout,x[i]]
+         yout=[yout,yt]
+      ENDIF 
+      i++
+   ENDWHILE
+ENDIF
+
+
+END
+
+

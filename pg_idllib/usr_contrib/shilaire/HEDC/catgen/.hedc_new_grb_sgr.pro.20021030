@@ -1,0 +1,72 @@
+
+; This routine extracts all GRBs and SGRs since HESSI lauch (2002/02/05), or 2002/02/13 (where datas was OK.)
+; The extraction is from the KONUS list.
+; The current list is stored.
+
+
+FUNCTION hedc_new_grb_sgr, listdir=listdir, url=url, NOREPLACE=NOREPLACE
+
+IF NOT KEYWORD_SET(listdir) THEN listdir='/global/hercules/users/shilaire/LOGS/KONUS'
+IF NOT KEYWORD_SET(url) THEN url='http://gcn.gsfc.nasa.gov/gcn/konus_grbs.html'
+
+;1) Extract the old and new list-----------------------------------------------------------------------
+ho=OBJ_NEW('http')
+break_url,url,server,path,file
+ho->open,server
+ho->list,path+'/'+file,newhtmllist,err=err,count=count
+ho->close
+OBJ_DESTROY,ho
+
+IF err NE '' THEN MESSAGE,'.....!!! PROBLEM WITH READING THE REMOTE FILE -- CRASHING NOW...'
+
+oldlist=-1
+newlist=-1
+IF file_exist(listdir+'/lastlist.txt') THEN BEGIN
+	oldlist=rd_text(listdir+'/lastlist.txt')	
+ENDIF ELSE BEGIN
+	PRINT,'............ old list not there... replacing, and doing nothing....'
+	GOTO,THEEND
+ENDELSE
+	
+
+;2) Compare new list with old one (lastlist.html), and extract new items. (type/time)-----------------------------------------------------------------------
+	;a) transform newhtmllist to newlist
+startregexp='XXXXXX'
+endregexp='</tr></table>'
+bla=grep(startregexp,newhtmllist,index=newliststartindex)
+bla=grep(endregexp,newhtmllist,index=newlistendindex)
+tmp=''
+FOR i=newliststartindex+1,newlistendindex DO tmp=tmp+newhtmllist[i]
+tmp=str_sep(tmp,'<tr')
+
+FOR i=1,N_ELEMENTS(tmp)-1 DO BEGIN
+	bla=str_sep(tmp[i],'<td>',/REMOVE_ALL)
+	thedatetime=STRMID(bla[1],0,4)+'/'+STRMID(bla[1],4,2)+'/'+STRMID(bla[1],6,2)+' '+STRMID(bla[3],0,12)
+	bla=str_sep(bla[5],'</td>')
+	thetype=bla[0]
+	if strn(thetype) EQ '' THEN thetype='???'
+
+	IF datatype(newlist) EQ 'INT' THEN newlist=thetype+' '+thedatetime ELSE newlist=[newlist,thetype+' '+thedatetime]
+ENDFOR
+
+	;b) for each item of newlist, check whether it already exists in oldlist. If not, we have a new item !
+newitems=-1
+FOR i =0,N_ELEMENTS(newlist)-1 DO BEGIN
+	IF grep(newlist[i],oldlist) EQ '' THEN BEGIN
+		IF datatype(newitems) EQ 'INT' THEN newitems=newlist[i] ELSE newitems=[newitems,newlist[i]]
+	ENDIF
+ENDFOR
+
+THEEND:
+;3) Replace old list with new one-----------------------------------------------------------------------
+IF NOT KEYWORD_SET(NOREPLACE) THEN BEGIN
+	OPENW,lun,/GET_LUN,listdir+'/lastlist.txt'
+	FOR i=0,N_ELEMENTS(newlist)-1 DO PRINTF,lun,newlist[i]
+	FREE_LUN,lun
+ENDIF
+
+
+;4) Output the difference between the two lists-----------------------------------------------------------------------
+
+IF datatype(newitems) EQ 'INT' THEN RETURN,-1 ELSE RETURN,newitems
+END

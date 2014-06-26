@@ -1,0 +1,203 @@
+; a variation of chk_img_intervals: returns correct imaging intervals.
+;
+;
+;	Modified 2002/11/14: added keyword /ATTLOW: if set, removes intervals bounded by any lower attenuator state, AND shorter than 2.0 minutes.
+;	Mod. 2002/12/12 : 	- added keyword 'wait_after_shutter_change' : if set, will remove times less then 'wait_on_shutter_change' (in seconds, typically ~60) after an attenuator change.
+;				- added keyword /PARTICLES: if set, will remove times were particle_flag (if available) was set.
+;				- added keyword 'wait_after_eclipse': if set, will remove times less then 'wait_on_shutter_change' (in seconds, typically ~120) after an RHESSI popped out of the night side.
+;
+;	Mod. 2002/12/18 :	added keyword /REAR_DECIMATION
+;	Mod. 2003/09/06 :	added AAZ flag as marker for bad intervals...
+;	Mod. 2004/08/13 :	added FRONTS_OFF and REAR_DEC_WEIGHT...
+;
+;
+;	RESTRICTIONS: obs_time_intv should be longer than either 'wait_after_eclipse' or 'wait_after_shutter_change', otherwise: bug! (could be fixed, eventually...)
+;
+
+FUNCTION to_nice_img_intervals,time_intv,mindeltat=mindeltat,mincountsperdetector=mincountsperdetector,eband=eband,	$
+	ATTLOW=ATTLOW, wait_after_shutter_change= wait_after_shutter_change, PARTICLES=PARTICLES, wait_after_eclipse=wait_after_eclipse, REAR_DECIMATION=REAR_DECIMATION,	$
+	mostcounts=mostcounts,counts=counts		; output KEYWORDS
+
+	IF NOT KEYWORD_SET(mindeltat) THEN mindeltat=1.		; seconds !
+	IF NOT KEYWORD_SET(mincountsperdetector) THEN mincountsperdetector=0.
+	IF NOT KEYWORD_SET(eband) THEN eband=2	;12-25 keV	; eband=[1,2,3] for 6-50 keV
+	IF NOT KEYWORD_SET(wait_after_shutter_change) THEN wait_after_shutter_change=0
+	IF NOT KEYWORD_SET(wait_after_eclipse) THEN wait_after_eclipse=0
+		
+	oso=OBJ_NEW('hsi_obs_summary')
+;-------------------------------------------------------------------------------------------------
+	es=0
+	CATCH,es
+	IF es NE 0 THEN BEGIN
+		PRINT,'...............................CAUGHT ERROR in to_nice_img_intervals.pro !......................'
+		HELP, CALLS=caller_stack
+		PRINT, 'Error index: ', es
+                PRINT, 'Error message:', !ERR_STRING
+                PRINT,'Error caller stack:',caller_stack
+		HELP, /Last_Message, Output=ErrorMessages
+                FOR j=0,N_Elements(ErrorMessages)-1 DO PRINT, ErrorMessages[j]
+		PRINT,'...................................................................'
+		OBJ_DESTROY,oso
+		RETURN,time_intv
+	ENDIF
+;-------------------------------------------------------------------------------------------------
+	oso->set,obs_time_interval=time_intv
+
+	rates_struct=oso->getdata()
+	rates=rates_struct.COUNTRATE
+	IF datatype(rates) EQ 'BYT' THEN BEGIN
+		PRINT,'.............oups! A screw up (again!): apparently, I need to decompress those #%$@ rates.... decompressing now....'
+		rates=hsi_obs_summ_decompress(rates_struct.COUNTRATE)
+	ENDIF
+	times=oso->getdata(/time)
+	info=oso->get(class_name='hsi_obs_summ_rate')
+	flagdata_struct=oso->getdata(class_name='obs_summ_flag')
+	flagdata=flagdata_struct.FLAGS
+	flaginfo=oso->get(class_name='obs_summ_flag')
+	flagtimes=oso->getdata(class_name='obs_summ_flag',/time)
+	
+	IF wait_after_eclipse NE 0 THEN BEGIN
+		;I need a certain amount of Obs. Summ. flags info before time_intv[0]...
+		add_time=DOUBLE(wait_after_eclipse)
+		oso->set,obs_time=[anytim(time_intv[0])-add_time,anytim(time_intv[0])]
+		add_flagdata_struct=oso->getdata(class_name='obs_summ_flag')
+		add_flagdata=add_flagdata_struct.FLAGS
+		time_bin=oso->get(class_name='obs_summ_flag',/time_intv)
+		add_bins=CEIL(add_time/time_bin)
+		ss=WHERE(add_flagdata[1,*] NE 0)
+		IF ss[0] NE -1 THEN BEGIN
+			IF N_ELEMENTS(ss) GT N_ELEMENTS(flagdata[0,*]) THEN ss=ss[0:N_ELEMENTS(flagdata[0,*])-1]
+			flagdata[17,ss]=1
+		ENDIF
+		ss=WHERE(flagdata[1,*] NE 0)
+		IF ss[0] NE -1 THEN BEGIN
+			ss=ss+add_bins
+			FOR j=0,N_ELEMENTS(ss)-1 DO BEGIN
+				IF ss[j] LT N_ELEMENTS(flagdata[0,*]) THEN flagdata[17,ss[j]]=1	;simulate GAP flag, to show they are unwanted...
+			ENDFOR			
+		ENDIF
+	ENDIF
+	IF wait_after_shutter_change NE 0 THEN BEGIN
+		add_time=DOUBLE(wait_after_shutter_change)
+		oso->set,obs_time=[anytim(time_intv[0])-add_time,anytim(time_intv[0])]
+		add_flagdata_struct=oso->getdata(class_name='obs_summ_flag')
+		add_flagdata=flagdata_struct.FLAGS
+		time_bin=oso->get(class_name='obs_summ_flag',/time_intv)
+		add_bins=CEIL(add_time/time_bin)
+		ss=get_ss_changes(add_flagdata[14,*])
+		IF ss[0] NE -1 THEN BEGIN
+			FOR j=0,N_ELEMENTS(ss)-1 DO BEGIN
+				ss_end=MIN([ss[j]+add_bins,N_ELEMENTS(flagdata[0,*])-1])
+				flagdata[17,ss[j]:ss_end]=1	;simulate GAP flag, to show they are unwanted...
+			ENDFOR
+		ENDIF
+	ENDIF
+
+	OBJ_DESTROY,oso
+
+;***************************************************************************************************************************
+	changeflags=[14,18,19]		;ATTENUATOR, DECIMATION ENERGY/WEIGHT
+	presenceflags=[0,1,17,23,30]		;SAA,NIGHT, GAP, AAZ, FRONTS_OFF
+	IF KEYWORD_SET(PARTICLES) THEN presenceflags=[presenceflags,24]		;PARTICLES
+	IF KEYWORD_SET(REAR_DECIMATION) THEN changeflags=[changeflags,21,22,25,29]		;NMZ, SMZ, REAR_DECIMATION, REAR_DEC_WEIGHT
+;***************************************************************************************************************************
+
+	;FIRST: subdivide everything in proper intervals
+	subdivisionsflags=[changeflags,presenceflags]
+
+	intvtim=anytim(time_intv)
+	n_intv=N_ELEMENTS(flagtimes)	
+	div_ss=[0,n_intv-1]
+	
+	ss_tot=-1
+	FOR i=0,N_ELEMENTS(subdivisionsflags)-1 DO BEGIN
+		ss=get_ss_changes(flagdata[subdivisionsflags[i],*])
+		IF ss[0] NE -1 THEN BEGIN
+			IF ss_tot[0] EQ -1 THEN ss_tot=ss ELSE ss_tot=[ss_tot,ss]
+		ENDIF
+	ENDFOR
+	ss=ss_tot[UNIQ(ss_tot, SORT(ss_tot))]
+	IF ss[0] NE -1 THEN div_ss=[0,ss,n_intv-1]
+
+	;ss is an array containing all change indices
+	;div_ss is an array containing all division indices
+
+	;SECOND, get a list of good intervals
+	valid_intv_ss=-1
+	n_div=N_ELEMENTS(div_ss)
+	mostcounts=0
+	counts='nil'
+	highestcounts=-1
+	FOR i=0,n_div-2 DO BEGIN
+		GOODINTV=1
+				
+		;1/ I don't want 'presence' dt:
+		FOR j=0,N_ELEMENTS(presenceflags)-1 DO BEGIN
+			IF flagdata[presenceflags[j],div_ss[i]+1] NE 0 THEN GOODINTV=0
+		ENDFOR
+		
+		;2/ I don't want dt less than mindeltat:
+		IF (flagtimes[div_ss[i+1]]-flagtimes[div_ss[i]]-flaginfo.time_intv) LT mindeltat THEN GOODINTV=0
+		
+		;3/ I want total counts in time interval in energyband 'eband' to be above 'mincountsperdetector'
+		totnbrcts=0D
+		FOR j=0,N_ELEMENTS(eband)-1 DO BEGIN
+			totnbrcts=totnbrcts+TOTAL(rates[eband[j],div_ss[i]:div_ss[i+1]])
+		ENDFOR
+		totnbrcts=totnbrcts*info.time_intv
+PRINT,'........'+anytim(/ECS,flagtimes[div_ss[i]])+' to '+anytim(/ECS,flagtimes[div_ss[i+1]])+'  cts='+strn(totnbrcts)  
+		IF totnbrcts LT mincountsperdetector THEN GOODINTV=0
+		
+		
+		;4/ if ATTLOW is set, then checks whether the interval is shorter than 1.9 minutes. 
+		;If it is, further checks whether the preceding AND succeeding atten states are lower than the current one.
+		;If both of the above conditions are met, then the interval is to be rejected!!! (because of likely PILE-UP!)
+		IF KEYWORD_SET(ATTLOW) THEN BEGIN
+			; interval shorter than 2 minutes ?
+			IF (flagtimes[div_ss[i+1]]-flagtimes[div_ss[i]]-flaginfo.time_intv) LT 120 THEN BEGIN
+				IF ((div_ss[i]-1) LT 0) THEN preceding_atten_state=flagdata[14,div_ss[i]] ELSE preceding_atten_state=flagdata[14,div_ss[i]-1]
+				current_atten_state=flagdata[14,div_ss[i]+1]
+				IF ((div_ss[i+1]+1) GT (N_ELEMENTS(flagtimes)-1)) THEN subsequent_atten_state=flagdata[14,div_ss[i+1]] ELSE subsequent_atten_state=flagdata[14,div_ss[i+1]+1]
+
+				;check:
+				IF ((preceding_atten_state GT current_atten_state) AND (subsequent_atten_state GT current_atten_state)) THEN GOODINTV=0								
+			ENDIF
+		ENDIF
+
+		;the rest...
+		IF GOODINTV EQ 1 THEN BEGIN 
+			IF valid_intv_ss[0] EQ -1 THEN valid_intv_ss=i ELSE valid_intv_ss=[valid_intv_ss,i]
+			IF datatype(counts) EQ 'STR' THEN counts=totnbrcts ELSE counts=[counts,totnbrcts]
+			IF totnbrcts GT highestcounts THEN BEGIN
+				highestcounts=totnbrcts
+				mostcounts=N_ELEMENTS(valid_intv_ss)-1
+			ENDIF
+		ENDIF
+	ENDFOR
+
+	IF valid_intv_ss[0] EQ -1 THEN RETURN,'None'
+
+	;THIRD: construct a start intv_ss and end_intv_ss with only valid intervals:
+	start_intv_ss=div_ss[valid_intv_ss[0]]
+	end_intv_ss=div_ss[valid_intv_ss[0]+1]
+	FOR i=1,N_ELEMENTS(valid_intv_ss)-1 DO BEGIN
+		start_intv_ss=[start_intv_ss,div_ss[valid_intv_ss[i]]]
+		end_intv_ss=[end_intv_ss,div_ss[valid_intv_ss[i]+1]]
+	ENDFOR
+
+	;FOURTH: construct anytim array with new_intv_ss:
+		starttimes=flagtimes[start_intv_ss]
+		endtimes=flagtimes[end_intv_ss]
+	
+
+	newintv=TRANSPOSE([[starttimes],[endtimes]])
+	;newintv = newintv[UNIQ(newintv, SORT(newintv))]
+	;; starttimes shifted right	
+	newintv[0,*]=newintv[0,*]+flaginfo.time_intv
+
+	IF (newintv[0,0]-flaginfo.time_intv EQ anytim(time_intv[0])) THEN newintv[0,0]=anytim(time_intv[0])
+	RETURN,newintv
+END
+
+
+

@@ -1,0 +1,82 @@
+;by Pascal Saint-Hilaire (shilaire@astro.phys.ethz.ch OR psainh@hotmail.com)
+; -- Feb. 21st,2001
+; this program hasn't been thouroughly tested yet - but so far so good !
+
+; Earth-Centered Inertial (i.e. non-rotating) coordinates are pretty straighforward.
+;	ECI coords are alos known as Geocentric Equatorial Inertial System
+; GEODETIC coordinates are the longitude,latitude and altitude above the ellipsoidal surface of the Earth.
+; see http://www.spenvis.oma.be/spenvis/help/background/coortran/
+
+;INPUTS : x,y,z (in km) and time (UT time, in anytim format)
+;OUTPUTS : lat ,lon (both in degrees) and alt (in km) 
+;lat and lon are those of satellite subpoint, taking into account oblateness of the Earth
+
+; EXEMPLE : eci2geodetic,7000.,1.,1.,'09-MAR-01',lat,lon,alt
+
+; modified 2001/09/24: added 'x=DOUBLE(x) , etc...'
+
+pro eci2geodetic,x,y,z,time,lat,lon,alt
+
+xkmper   = 6378.137        ;{Earth equatorial radius - kilometers (WGS '84 / GRS '80)}
+f        = 1/298.257	   ;{Earth flattening (WGS '84 / GRS '80)}
+
+x=DOUBLE(x)
+y=DOUBLE(y)
+z=DOUBLE(z)
+
+theta=myarctan(x,y)
+t=anytim(time,/ex)
+ct2lst,gst,0,0,ten(t(0),t(1)),t(4),t(5),t(6)
+angle_sid=gst*2.*!PI/24.
+lon= (theta - angle_sid ) MOD (2* !PI)
+if lon lt 0. then lon=lon+(2* !PI)	
+r=sqrt(x^2+y^2)
+e2=f*(2-f)
+lat=myarctan(r,z)
+
+phi=lat
+c=1/sqrt(1-e2*sin(phi)^2)
+lat=myarctan(r, (z+xkmper*c*e2*sin(phi)) )		
+
+while abs(lat-phi) ge 0.0000000001 do begin
+		     phi=lat
+		     c=1/sqrt(1-e2*sin(phi)^2)
+		     lat=myarctan(r, (z+xkmper*c*e2*sin(phi)) )		
+				end 
+alt=r/cos(lat) - xkmper*c
+
+lat=lat*180./(!PI)	; to convert into degrees...
+lon=lon*180./(!PI)
+end
+
+
+
+
+
+
+; ORIGINAL PASCAL code :
+
+;Procedure Calculate_LatLonAlt(pos : vector;
+;                             time : double;
+;                     var geodetic : vector);
+;{ Reference:  The 1992 Astronomical Almanac, page K12. }
+;  var
+;    lat,lon,alt,
+;    theta,r,e2,phi,c : double;
+;  begin
+;  theta := AcTan(pos[2],pos[1]);
+;  lon := Modulus(theta - ThetaG_JD(time),twopi);
+;  r := Sqrt(Sqr(pos[1]) + Sqr(pos[2]));
+;  e2 := f*(2 - f);
+;  lat := AcTan(pos[3],r);
+;  repeat
+;    phi := lat;
+;    c := 1/Sqrt(1 - e2*Sqr(Sin(phi)));
+;    lat := AcTan(pos[3] + xkmper*c*e2*Sin(phi),r);
+;  until Abs(lat - phi) < 1E-10;
+;  alt := r/Cos(lat) - xkmper*c;
+;  geodetic[1] := lat;   {radians}
+;  geodetic[2] := lon;   {radians}
+;  geodetic[3] := alt;   {kilometers}
+;  geodetic[4] := theta; {radians}
+;  end; {Procedure Calculate_LatLonAlt}
