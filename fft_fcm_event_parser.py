@@ -14,6 +14,7 @@
 #        3b) if no: move on
 #
 ###########################################################################
+#Import all of the modules necessary to run the code.
 import os  
 import glob 
 import datetime
@@ -27,6 +28,7 @@ import scipy
 from scipy.io.idl import readsav
 import scipy.ndimage as image
 import sunpy
+import sunpy.map
 import numpy as np
 import pickle
         
@@ -34,7 +36,7 @@ import pickle
 ###########################################################################
 #System dependent global variables
 #Define the path to the stacks
-PATH_2_STACKS="/home/hwinter/programs/Flare_Detective/Event_Stacks/"
+PATH_2_STACKS="/Volumes/scratch_2/Users/hwinter/programs/Flare_Detective_Data/Event_Stacks/"
 
 #Define the path to each stack
 PATH_2_Pending=os.path.join(PATH_2_STACKS,'Pending')
@@ -124,7 +126,7 @@ def call_character_mod(filename):
     for files in file_list :
         list_file.write(files+'\n')
 
-    list_file.close()
+    #list_file.close()
     print("here 1")
     #Write an sswidl file to call
     idl_file=open(os.path.join(working_dir, 'fft_fcm_prep_fits.pro'), 'w')
@@ -136,12 +138,12 @@ def call_character_mod(filename):
     idl_file.write("EXIT \n")
     idl_file.write("END \n")
     idl_file.close()
-    print("here 2")
+    #print("here 2")
    
     #print(working_dir)
     subprocess.call("ssw_batch "+os.path.join(working_dir, 'fft_fcm_prep_fits.pro')+" "+os.path.join(working_dir, 'fft_fcm_prep_fits.log'), shell=True )
     
-    print("here 3")
+    #print("here 3")
     #Get a list of fits files in the current working directory
     working_file_list= glob.glob(os.path.join(working_dir,'fits', '*.fits'))
     #reduce the full sun image to the area of the flare. (List of AIAmap objects)
@@ -154,7 +156,7 @@ def call_character_mod(filename):
     pickle.dump(flare_map_list,map_out)
     map_out.close()
     
-    print("here 4")
+    #print("here 4")
     #Remove the fits files.
     # for files in working_file_list:
     #    os.remove(files)
@@ -168,7 +170,7 @@ def call_character_mod(filename):
     #print("Completed fcm_make_movie_map")
     print(len(flare_map_list))
     difference_map_list=get_difference_map(flare_map_list)
-    print("here 5")
+    #print("here 5")
     difference_out=open('diff.pkl','wb')
     
     pickle.dump(difference_map_list,difference_out)
@@ -365,7 +367,9 @@ def get_cropped_map(ev, file_list):
     bbc= get_event_bounding_box(ev)
     out_map_list=[]
     for files in file_list:
-        temp_map= sunpy.make_map(files)
+    	#Changed after Sunpy V0.5.0
+        #temp_map= sunpy.make_map(files)
+        temp_map=sunpy.map.Map(files)
         temp_map=temp_map.submap([bbc[0], bbc[2]],[bbc[1], bbc[3]])
         out_map_list.append(temp_map)
     print("out_map_list",aalen(out_map_list))
