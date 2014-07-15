@@ -167,7 +167,7 @@ pro fft_fcm_event_scan, time_start, time_end, $
 
 ;Sets the default path to the stacks.  This will be overridden if
 ;the PATH_2_STACKS keyword is set
-PATH_2_STACKS_in='/data/george/hwinter/data/Flare_Detective_Data/Event_Stacks/'
+PATH_2_STACKS_in='/Volumes/scratch_2/Users/hwinter/programs/Flare_Detective_Data/Event_Stacks/'
   if not keyword_set(PATH_2_STACKS) then begin
 ;Test the folder stacks
      case 0 of 

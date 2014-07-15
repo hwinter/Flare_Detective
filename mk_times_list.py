@@ -13,14 +13,14 @@ import subprocess
 import multiprocessing as mp
 ###########################################################################
 
-working_dir='/data/george/hwinter/data/Flare_Detective_Data/flare_scan/'
-working_dir="/Volumes/scratch_2/Users/hwinter/programs/Flare_Detective_Data/lare_scan/"
+#working_dir='/data/george/hwinter/data/Flare_Detective_Data/flare_scan/'
+working_dir="/Volumes/scratch_2/Users/hwinter/programs/Flare_Detective_Data/flare_scan/"
 #PATH_2_STACKS="/data/george/hwinter/data/Flare_Detective_Data/Event_Stacks/"
 PATH_2_STACKS="/Volumes/scratch_2/Users/hwinter/programs/Flare_Detective_Data/Event_Stacks/"
 ###########################################################################
 # Define time range and time steps
-begin_time=datetime.datetime(2014, 01, 01, 00, 00, 00)
-end_time=  datetime.datetime(2014, 06, 04, 00, 00, 00)
+begin_time=datetime.datetime(2014, 4, 1, 00, 00, 00)
+end_time=  datetime.datetime(2014, 6, 8, 00, 00, 00)
 
 t_current=begin_time
 start_times=[]

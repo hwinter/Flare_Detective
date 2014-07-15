@@ -59,6 +59,7 @@ def make_flare_lightcurve(map):
 def extract_YYYYMMDD(filename):
     """
     go through the filename and extract the first valid YYYYMMDD as a datetime
+    object
     
     Parameters
     ==========
@@ -82,21 +83,12 @@ def extract_YYYYMMDD(filename):
         dt = None
     return dt
 ###########################################################################
-###########################################################################
-def call_character_mod(filename):
+def make_working_paths(PATH_2_Working):
     """
+    Make all of the working paths needed to get the job done.
     !!Not done until you have a complete DocString!! 
     """
-    print(os.getpid())
-    #time.sleep(1)
-    #Define Global Variables
-    global PATH_2_Pending
-    global PATH_2_Processing
-    global PATH_2_Completed
-    global PATH_2_Working
-    global PATH_2_IDLpros
-    global aia_top_dir
-###########################################################################
+    
     #Make a working directory to put the working fits files in.    
     working_dir=os.path.join(PATH_2_Working, os.path.splitext(filename)[0])
     if not os.path.exists(working_dir):
@@ -104,117 +96,16 @@ def call_character_mod(filename):
     fits_dir=os.path.join(working_dir, 'fits')
     if not os.path.exists(fits_dir):
         os.mkdir(fits_dir)
+    #Make a directory to put the working image frames in.   
     frames_dir=os.path.join(working_dir, 'frames')
     if not os.path.exists(frames_dir):
         os.mkdir(frames_dir)
+    #Make a directory to put the working movie files in.     
     movie_dir=os.path.join(working_dir, 'movie')
     if not os.path.exists(movie_dir):
         os.mkdir(movie_dir)
         
-      
-   
-    #Read in the event structure as a NumPy recarray
-    save_file=os.path.join(PATH_2_Processing,filename)
-    ev=readsav(save_file)
-    
-   
-    #print(ev.event.EVENT_STARTTIME[0])
-    file_list=get_aia_fits_path(ev)
-    print(file_list)
-    #Print the file list to a text file that IDL can read.
-    
-    list_file=open(os.path.join(working_dir,'fits_list.txt'), 'w')
-    for files in file_list :
-        list_file.write(files+'\n')
-
-    #list_file.close()
-    print("here 1")
-    #Write an sswidl file to call
-    idl_file=open(os.path.join(working_dir, 'fft_fcm_prep_fits.pro'), 'w')
-    idl_file.write("file_name= '"+working_dir+"/fits_list.txt' \n")
-    idl_file.write("file_list=rd_tfile(file_name,1) \n")
-    idl_file.write("fits_dir= '"+fits_dir+"' \n")
-    idl_file.write("ind=indgen(n_elements(file_list)) \n")
-    idl_file.write("aia_prep, file_list[ind], ind,outdir=fits_dir,/DO_WRITE_FITS \n")
-    idl_file.write("EXIT \n")
-    idl_file.write("END \n")
-    idl_file.close()
-    print("here 2")
-   
-    print(working_dir)
-    print(os.path.join(working_dir, 'fft_fcm_prep_fits.pro'))
-    subprocess.call("ssw_batch "+os.path.join(working_dir, 'fft_fcm_prep_fits.pro')+" "+os.path.join(working_dir, 'fft_fcm_prep_fits.log'), shell=True )
-    
-    print("here 3")
-    #Get a list of fits files in the current working directory
-    working_file_list= glob.glob(os.path.join(working_dir,'fits', '*.fits'))
-    #reduce the full sun image to the area of the flare. (List of AIAmap objects)
-    #   print("Calling get_cropped_map")
-    flare_map_list=get_cropped_map(ev, working_file_list)
-    for iii, map_obj in enumerate(flare_map_list):
-        map_obj.dump(os.path.join(working_dir,'map_'+str(iii).zfill(5)+'.pkl'))
-    
-    map_out=open(os.path.join(working_dir,'map_list.pkl'),'wb')
-    pickle.dump(flare_map_list,map_out)
-    map_out.close()
-    
-    #print("here 4")
-    #Remove the fits files.
-    # for files in working_file_list:
-    #    os.remove(files)
-        
-    #print("Completed get_cropped_map")
-    #
-    #make a Movie
-    #
-    #print("Calling fcm_make_movie_map")
-    #fcm_make_movie_map(flare_map_list,working_dir, ev,frames_dir,movie_dir)
-    #print("Completed fcm_make_movie_map")
-    print(len(flare_map_list))
-    difference_map_list=get_difference_map(flare_map_list)
-    #print("here 5")
-    difference_out=open('diff.pkl','wb')
-    
-    pickle.dump(difference_map_list,difference_out)
-    difference_out.close()
-    fcm_make_movie_map(difference_map_list, working_dir, ev,frames_dir,movie_dir,
-                       frame_prefix="difference_frame",movie_name="difference_mov.mp4" )
-    
-    print("here 6")
-    #mask_map_list=get_mask_map(flare_map_list)
-    mask_map_list=get_mask_map(difference_map_list)
-    mask_out=open('mask.pkl','wb')
-    pickle.dump(mask_map_list,mask_out)
-    mask_out.close()
-    print("here11")
-    fcm_make_movie_map(mask_map_list, working_dir, ev,frames_dir,movie_dir,
-                       frame_prefix="mask_frame",movie_name="mask_mov.mp4", normal='ON' )
-        #
-    #Get the flare location from a median of the center of mass from the masked image
-    #as a function of time.
-    xy=get_flare_location(mask_map_list)
-    print("\n")
-    print("####################################################################")
-    print("ev.event.EVENT_COORD1[0]",ev.event.EVENT_COORD1[0], ev.event.EVENT_COORD2[0])
-    print("xy", xy)
-    xy
-    
-    ev.event.EVENT_COORD1[0]=str(xy[0])
-    ev.event.EVENT_COORD2[0]=str(xy[1])
-    print("ev.event.EVENT_COORD1[0]",ev.event.EVENT_COORD1[0], ev.event.EVENT_COORD2[0])
-
-    print("####################################################################")
-    print("\n")
-    
-    fcm_make_movie_map(flare_map_list,working_dir, ev,frames_dir,movie_dir,
-                       frame_prefix="update_frame",movie_name="update_mov.mp4" )
-    print("There!")
-    #Save reduced image
-    
-    #get a mask that covers non-flaring region as a function of time.
-    #Calculate area as a function of time
-    #
-    
+    return(working_dir,fits_dir, frames_dir, movie_dir )    
 ###########################################################################
 ###########################################################################
 def get_flare_location(map_list):
@@ -374,6 +265,7 @@ def get_cropped_map(ev, file_list):
         temp_map=sunpy.map.Map(files)
         temp_map=temp_map.submap([bbc[0], bbc[2]],[bbc[1], bbc[3]])
         out_map_list.append(temp_map)
+        temp_map.save(file, filetype='.fits')
     print("out_map_list",aalen(out_map_list))
     return out_map_list
 ###########################################################################
@@ -501,6 +393,128 @@ def check_mv(filename, fromdir, todir):
         # print(os.path.getsize(infile))
         os.remove(infile)
         return True
+###########################################################################
+###########################################################################
+def call_character_mod(filename):
+    """
+    !!Not done until you have a complete DocString!! 
+    """
+    print(os.getpid())
+    #time.sleep(1)
+    #Define Global Variables
+    global PATH_2_Pending
+    global PATH_2_Processing
+    global PATH_2_Completed
+    global PATH_2_Working
+    global PATH_2_IDLpros
+    global aia_top_dir
+###########################################################################
+        
+    working_dir,fits_dir, frames_dir, movie_dir=make_working_paths(PATH_2_Working)  
+   
+    #Read in the event structure as a NumPy recarray
+    save_file=os.path.join(PATH_2_Processing,filename)
+    ev=readsav(save_file)
+    
+   
+    #print(ev.event.EVENT_STARTTIME[0])
+    file_list=get_aia_fits_path(ev)
+    print(file_list)
+    #Print the file list to a text file that IDL can read.
+    
+    list_file=open(os.path.join(working_dir,'fits_list.txt'), 'w')
+    for files in file_list :
+        list_file.write(files+'\n')
+
+    #list_file.close()
+    print("here 1")
+    #Write an sswidl file to call
+    idl_file=open(os.path.join(working_dir, 'fft_fcm_prep_fits.pro'), 'w')
+    idl_file.write("file_name= '"+working_dir+"/fits_list.txt' \n")
+    idl_file.write("file_list=rd_tfile(file_name,1) \n")
+    idl_file.write("fits_dir= '"+fits_dir+"' \n")
+    idl_file.write("ind=indgen(n_elements(file_list)) \n")
+    idl_file.write("aia_prep, file_list[ind], ind,outdir=fits_dir,/DO_WRITE_FITS \n")
+    idl_file.write("EXIT \n")
+    idl_file.write("END \n")
+    idl_file.close()
+    print("here 2")
+   
+    print(working_dir)
+    print(os.path.join(working_dir, 'fft_fcm_prep_fits.pro'))
+    subprocess.call("ssw_batch "+os.path.join(working_dir, 
+    	'fft_fcm_prep_fits.pro')+" "+os.path.join(working_dir,
+    	 'fft_fcm_prep_fits.log'), shell=True )
+    
+    print("here 3")
+    #Get a list of fits files in the current working directory
+    working_file_list= glob.glob(os.path.join(working_dir,'fits', '*.fits'))
+    #reduce the full sun image to the area of the flare. (List of AIAmap objects)
+    #   print("Calling get_cropped_map")
+    flare_map_list=get_cropped_map(ev, working_file_list)
+    for iii, map_obj in enumerate(flare_map_list):
+        map_obj.dump(os.path.join(working_dir,'map_'+str(iii).zfill(5)+'.pkl'))
+    
+    #map_out=open(os.path.join(working_dir,'map_list.pkl'),'wb')
+    #pickle.dump(flare_map_list,map_out)
+    #map_out.close()
+    
+    #print("here 4")
+        
+    
+        
+    #print("Completed get_cropped_map")
+    #
+    #make a Movie
+    #
+    #print("Calling fcm_make_movie_map")
+    #fcm_make_movie_map(flare_map_list,working_dir, ev,frames_dir,movie_dir)
+    #print("Completed fcm_make_movie_map")
+    print(len(flare_map_list))
+    difference_map_list=get_difference_map(flare_map_list)
+    #print("here 5")
+    difference_out=open('diff.pkl','wb')
+    
+    pickle.dump(difference_map_list,difference_out)
+    difference_out.close()
+    fcm_make_movie_map(difference_map_list, working_dir, ev,frames_dir,movie_dir,
+                       frame_prefix="difference_frame",movie_name="difference_mov.mp4" )
+    
+    print("here 6")
+    #mask_map_list=get_mask_map(flare_map_list)
+    mask_map_list=get_mask_map(difference_map_list)
+    mask_out=open('mask.pkl','wb')
+    pickle.dump(mask_map_list,mask_out)
+    mask_out.close()
+    print("here11")
+    fcm_make_movie_map(mask_map_list, working_dir, ev,frames_dir,movie_dir,
+                       frame_prefix="mask_frame",movie_name="mask_mov.mp4", normal='ON' )
+        #
+    #Get the flare location from a median of the center of mass from the masked image
+    #as a function of time.
+    xy=get_flare_location(mask_map_list)
+    print("\n")
+    print("####################################################################")
+    print("ev.event.EVENT_COORD1[0]",ev.event.EVENT_COORD1[0], ev.event.EVENT_COORD2[0])
+    print("xy", xy)
+    xy
+    
+    ev.event.EVENT_COORD1[0]=str(xy[0])
+    ev.event.EVENT_COORD2[0]=str(xy[1])
+    print("ev.event.EVENT_COORD1[0]",ev.event.EVENT_COORD1[0], ev.event.EVENT_COORD2[0])
+
+    print("####################################################################")
+    print("\n")
+    
+    fcm_make_movie_map(flare_map_list,working_dir, ev,frames_dir,movie_dir,
+                       frame_prefix="update_frame",movie_name="update_mov.mp4" )
+    print("There!")
+    #Save reduced image
+    
+    #get a mask that covers non-flaring region as a function of time.
+    #Calculate area as a function of time
+    #
+    
 ###########################################################################    
 ###########################################################################
 
