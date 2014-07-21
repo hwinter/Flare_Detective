@@ -56,20 +56,26 @@ def make_flare_lightcurve(map):
     return lightcurve
 ###########################################################################
 ###########################################################################
-def make_meta_data_file(ev):
+def make_meta_data_file(ev, working_dir):
     """
     !!Not done until you have a complete DocString!! 
     """
 	success=0
 	
-	print("Ivorn File ",)
-	print("Channel: ", str(ev.event.OBS_CHANNELID[0]))
-	print("Start Time: ",datetime.datetime.strptime(ev.event.EVENT_STARTTIME[0],"%Y-%m-%dT%H:%M:%S"))
-	print("Start Time: ",datetime.datetime.strptime(ev.event.EVENT_ENDTIME[0],"%Y-%m-%dT%H:%M:%S"))
-    print("X Center: ",ev.event.EVENT_COORD1[0])
-    print("Y Center: ",ev.event.EVENT_COORD2[0]) 
+	text_file = open(os.path.join(working_dir,"meta_data.txt"), "w")
+	
+	text_file.write("Ivorn File ",)
+	text_file.write("Channel: ", str(ev.event.OBS_CHANNELID[0]))
+	text_file.write("Start Time: ", \
+		datetime.datetime.strptime(ev.event.EVENT_STARTTIME[0],"%Y-%m-%dT%H:%M:%S"))
+	text_file.write("Start Time: ", \
+		datetime.datetime.strptime(ev.event.EVENT_ENDTIME[0],"%Y-%m-%dT%H:%M:%S"))
+    text_file.write("X Center: ", \
+    	ev.event.EVENT_COORD1[0])
+    text_file.write("Y Center: ", \
+    	ev.event.EVENT_COORD2[0]) 
     
-    
+    text_file.close()
 	success=1
 
     return success
