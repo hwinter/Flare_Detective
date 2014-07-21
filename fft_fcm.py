@@ -56,6 +56,25 @@ def make_flare_lightcurve(map):
     return lightcurve
 ###########################################################################
 ###########################################################################
+def make_meta_data_file(ev):
+    """
+    !!Not done until you have a complete DocString!! 
+    """
+	success=0
+	
+	print("Ivorn File ",)
+	print("Channel: ", str(ev.event.OBS_CHANNELID[0]))
+	print("Start Time: ",datetime.datetime.strptime(ev.event.EVENT_STARTTIME[0],"%Y-%m-%dT%H:%M:%S"))
+	print("Start Time: ",datetime.datetime.strptime(ev.event.EVENT_ENDTIME[0],"%Y-%m-%dT%H:%M:%S"))
+    print("X Center: ",ev.event.EVENT_COORD1[0])
+    print("Y Center: ",ev.event.EVENT_COORD2[0]) 
+    
+    
+	success=1
+
+    return success
+###########################################################################
+###########################################################################
 def extract_YYYYMMDD(filename):
     """
     go through the filename and extract the first valid YYYYMMDD as a datetime
@@ -81,7 +100,8 @@ def extract_YYYYMMDD(filename):
     # better not still be using this... present to help with random numbers combinations
     elif dt > datetime.datetime(2050, 1, 1):
         dt = None
-    return dt
+    return dt    
+###########################################################################
 ###########################################################################
 def make_working_paths(PATH_2_Working):
     """
@@ -182,11 +202,6 @@ def get_aia_fits_path(ev):
     print(len(file_list))    
     return file_list
     #Gather the data for the program
-    
-
-
-
-    
     #test=check_mv(filename, PATH_2_Processing, PATH_2_Completed)
         
 
@@ -497,7 +512,6 @@ def call_character_mod(filename):
     print("####################################################################")
     print("ev.event.EVENT_COORD1[0]",ev.event.EVENT_COORD1[0], ev.event.EVENT_COORD2[0])
     print("xy", xy)
-    xy
     
     ev.event.EVENT_COORD1[0]=str(xy[0])
     ev.event.EVENT_COORD2[0]=str(xy[1])
