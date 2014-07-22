@@ -60,24 +60,20 @@ def make_meta_data_file(ev, working_dir):
     """
     !!Not done until you have a complete DocString!! 
     """
-	success=0
-	
-	text_file = open(os.path.join(working_dir,"meta_data.txt"), "w")
-	
-	text_file.write("Ivorn File ",)
-	text_file.write("Channel: ", str(ev.event.OBS_CHANNELID[0]))
-	text_file.write("Start Time: ", \
-		datetime.datetime.strptime(ev.event.EVENT_STARTTIME[0],"%Y-%m-%dT%H:%M:%S"))
-	text_file.write("Start Time: ", \
-		datetime.datetime.strptime(ev.event.EVENT_ENDTIME[0],"%Y-%m-%dT%H:%M:%S"))
-    text_file.write("X Center: ", \
-    	ev.event.EVENT_COORD1[0])
-    text_file.write("Y Center: ", \
-    	ev.event.EVENT_COORD2[0]) 
+    success=0
+    text_file = open(os.path.join(working_dir,"meta_data.txt"), "w")
+    text_file.write("Ivorn File ",)
+    text_file.write("Channel: ", str(ev.event.OBS_CHANNELID[0]))
+    text_file.write("Start Time: ", \
+    datetime.datetime.strptime(ev.event.EVENT_STARTTIME[0],"%Y-%m-%dT%H:%M:%S"))
+    text_file.write("Start Time: ", \
+    datetime.datetime.strptime(ev.event.EVENT_ENDTIME[0],"%Y-%m-%dT%H:%M:%S"))
+    text_file.write("X Center: ",ev.event.EVENT_COORD1[0])
+    text_file.write("Y Center: ",ev.event.EVENT_COORD2[0]) 
     
     text_file.close()
-	success=1
-
+    success=1
+    
     return success
 ###########################################################################
 ###########################################################################
@@ -98,7 +94,8 @@ def extract_YYYYMMDD(filename):
         Written by B.A. Larsen, Ph.D. and generously donated to HDW III, Ph.D., D.A.
     """
     try:
-        dt = datetime.datetime.strptime(re.search("[12][09][0-9][0-9][01][0-9][0-3][0-9]", filename).group(), "%Y%m%d")
+        dt = datetime.datetime.strptime( \
+        	re.search("[12][09][0-9][0-9][01][0-9][0-3][0-9]", filename).group(), "%Y%m%d")
     except (ValueError, AttributeError): # there is not one
         return None
     if dt < datetime.datetime(1957, 10, 4, 19, 28, 34): # Sputnik 1 launch datetime
@@ -170,14 +167,11 @@ def get_aia_fits_path(ev):
         full path of AIA fits file in the 
     """
 
-
     #Define Global Variables
     global PATH_2_Working
     global aia_top_dir
     t_start=datetime.datetime.strptime(ev.event.EVENT_STARTTIME[0],"%Y-%m-%dT%H:%M:%S")
-    t_end=  datetime.datetime.strptime(ev.event.EVENT_ENDTIME[0],"%Y-%m-%dT%H:%M:%S")
-    
-    
+    t_end=  datetime.datetime.strptime(ev.event.EVENT_ENDTIME[0],"%Y-%m-%dT%H:%M:%S") 
 
     #Huh.  This actually creates a copy.  I thought it would make a pointer reference.
     t_current=t_start
@@ -210,7 +204,6 @@ def get_aia_fits_path(ev):
     #Gather the data for the program
     #test=check_mv(filename, PATH_2_Processing, PATH_2_Completed)
         
-
 ###########################################################################
 ###########################################################################
 def get_aia_data_path(dt):
