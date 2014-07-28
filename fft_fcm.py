@@ -279,7 +279,7 @@ def get_cropped_map(ev, file_list):
         temp_map=sunpy.map.Map(files)
         temp_map=temp_map.submap([bbc[0], bbc[2]],[bbc[1], bbc[3]])
         out_map_list.append(temp_map)
-        temp_map.save(file, filetype='.fits')
+        temp_map.save(files, filetype='.fits')
     print("out_map_list",aalen(out_map_list))
     return out_map_list
 ###########################################################################
