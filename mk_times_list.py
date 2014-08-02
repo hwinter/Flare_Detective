@@ -19,7 +19,7 @@ working_dir="/Volumes/scratch_2/Users/hwinter/programs/Flare_Detective_Data/flar
 PATH_2_STACKS="/Volumes/scratch_2/Users/hwinter/programs/Flare_Detective_Data/Event_Stacks/"
 ###########################################################################
 # Define time range and time steps
-begin_time=datetime.datetime(2014, 4, 1, 00, 00, 00)
+begin_time=datetime.datetime(2014, 1, 1, 00, 00, 00)
 end_time=  datetime.datetime(2014, 6, 8, 00, 00, 00)
 
 t_current=begin_time
@@ -77,7 +77,7 @@ for iii, times in enumerate(start_times):
 ###########################################################################
 
 
-po=mp.Pool(5)
+po=mp.Pool(10)
 
 for  filename in idl_files:
     print(filename)
