@@ -30,7 +30,7 @@ aia_top_dir="/data/SDO/AIA/level1/"
 
 
 ###########################################################################
-def call_character_mod(filename):
+def call_character_mod2(filename):
     """
     !!Not done until you have a complete DocString!! 
     """
@@ -46,6 +46,8 @@ def call_character_mod(filename):
 ###########################################################################
         
     working_dir,fits_dir, frames_dir, movie_dir=make_working_paths(PATH_2_Working)  
+    
+    #Save a copy of the fits file in the working directory, working_dir
    
     #Read in the event structure as a NumPy recarray
     save_file=os.path.join(PATH_2_Processing,filename)
