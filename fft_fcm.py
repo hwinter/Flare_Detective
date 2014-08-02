@@ -430,7 +430,8 @@ def call_character_mod(filename):
     save_file=os.path.join(PATH_2_Processing,filename)
     ev=readsav(save_file)
     
-   
+    #Copy the event file to the working directory
+    shutil.copy(save_file, working_dir)
     #print(ev.event.EVENT_STARTTIME[0])
     file_list=get_aia_fits_path(ev)
     print(file_list)
