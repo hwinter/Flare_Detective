@@ -11,16 +11,19 @@ import datetime
 import time
 import subprocess
 import multiprocessing as mp
+import random
 ###########################################################################
-
+top_dir="/sdo/scratch/hwinter/programs/"
+#top_dir="/Volumes/scratch_2/Users/hwinter/programs/"
 #working_dir='/data/george/hwinter/data/Flare_Detective_Data/flare_scan/'
-working_dir="/Volumes/scratch_2/Users/hwinter/programs/Flare_Detective_Data/flare_scan/"
+working_dir=os.path.join(top_dir,"Flare_Detective_Data/flare_scan/")
 #PATH_2_STACKS="/data/george/hwinter/data/Flare_Detective_Data/Event_Stacks/"
-PATH_2_STACKS="/Volumes/scratch_2/Users/hwinter/programs/Flare_Detective_Data/Event_Stacks/"
+PATH_2_STACKS=os.path.join(top_dir,"Flare_Detective_Data/Event_Stacks/")
 ###########################################################################
 # Define time range and time steps
-begin_time=datetime.datetime(2014, 4, 1, 00, 00, 00)
-end_time=  datetime.datetime(2014, 5, 1, 00, 00, 00)
+begin_time=datetime.datetime(2014, 2, 1, 00, 00, 00)
+end_time=  datetime.datetime(2014, 3, 1, 00, 00, 00)
+prefix='feb_'
 
 t_current=begin_time
 start_times=[]
@@ -53,7 +56,7 @@ times_file.close()
 idl_files=[]
 for iii, times in enumerate(start_times):
 #Write an sswidl file to call
-    fname=os.path.join(working_dir, 'fft_fcm_step_d'+str(iii)+'.pro')
+    fname=os.path.join(working_dir, 'fft_fcm_step_'+prefix+str(iii)+'.pro')
     idl_files.append(fname)
     idl_file=open(fname, 'w')
     idl_file.write("start_index="+str(iii)+"ul \n")
@@ -78,7 +81,7 @@ for iii, times in enumerate(start_times):
 
 
 po=mp.Pool(10)
-
+random.shuffle(idl_files)
 for  filename in idl_files:
     print(filename)
     po.apply_async(run_idl_jobs,(filename,))

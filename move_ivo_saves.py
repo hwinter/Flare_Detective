@@ -18,8 +18,8 @@ import shutil
 ###########################################################################
 #System dependent global variables
 #Define the path to the stacks
-#PATH_2_STACKS="/data/george/hwinter/data/Flare_Detective_Data/Event_Stacks/"
-PATH_2_STACKS="/Volumes/scratch_2/Users/hwinter/programs/Flare_Detective_Data/Event_Stacks/"
+PATH_2_STACKS="/data/george/hwinter/data/Flare_Detective_Data/Event_Stacks/"
+#PATH_2_STACKS="/Volumes/scratch_2/Users/hwinter/programs/Flare_Detective_Data/Event_Stacks/"
 #Define the path to each stack
 PATH_2_Pending=os.path.join(PATH_2_STACKS,'Pending')
 PATH_2_Processing=os.path.join(PATH_2_STACKS,'Processing')

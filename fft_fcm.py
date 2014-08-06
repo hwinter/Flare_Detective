@@ -106,7 +106,7 @@ def extract_YYYYMMDD(filename):
     return dt    
 ###########################################################################
 ###########################################################################
-def make_working_paths(PATH_2_Working):
+def make_working_paths(PATH_2_Working,filename):
     """
     Make all of the working paths needed to get the job done.
     !!Not done until you have a complete DocString!! 
